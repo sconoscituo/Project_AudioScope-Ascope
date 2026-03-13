@@ -1,0 +1,80 @@
+# ===== Python / Backend =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+ENV/
+env/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# 환경변수 (절대 커밋 금지)
+backend/.env
+backend/.env.development
+backend/.env.production
+backend/.env.local
+backend/firebase-credentials.json
+*.pem
+*.key
+
+# Alembic
+backend/migrations/versions/*.py
+!backend/migrations/versions/.gitkeep
+
+# ===== Flutter / Dart =====
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/.packages
+flutter_app/build/
+flutter_app/android/.gradle/
+flutter_app/android/local.properties
+flutter_app/android/key.properties
+flutter_app/ios/Pods/
+flutter_app/ios/.symlinks/
+flutter_app/ios/Flutter/Flutter.framework
+flutter_app/ios/Flutter/Flutter.podspec
+flutter_app/**/*.g.dart
+flutter_app/**/*.freezed.dart
+flutter_app/pubspec.lock
+flutter_app/google-services.json
+flutter_app/ios/GoogleService-Info.plist
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== Docker =====
+.dockerignore
+
+# ===== Claude / AI 도구 =====
+.claude/
+.omc/
+CLAUDE.md
+AGENTS.md
+.claude-personal/
+*.claude-memory
+*.omc-state
+
+# ===== OS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+desktop.ini
