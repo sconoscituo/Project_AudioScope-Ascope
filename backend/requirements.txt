@@ -1,20 +1,54 @@
+# Web Framework
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
+python-multipart==0.0.12
+
+# Database
 sqlalchemy==2.0.36
 alembic==1.13.3
 asyncpg==0.30.0
 psycopg2-binary==2.9.10
+
+# Redis (캐시 + 세션 + Rate Limit)
+redis[hiredis]==5.2.1
+
+# Pydantic
 pydantic==2.9.2
 pydantic-settings==2.6.0
+
+# Auth
 python-jose[cryptography]==3.3.0
-python-dotenv==1.0.1
-httpx==0.27.2
-boto3==1.35.0
 firebase-admin==6.5.0
+
+# HTTP Client
+httpx==0.27.2
+
+# Cloud Storage
+boto3==1.35.0
+
+# AI
 google-generativeai==0.8.3
+
+# Scheduler
 apscheduler==3.10.4
+
+# Rate Limiting
 slowapi==0.1.9
-python-multipart==0.0.12
+
+# News Parsing
 feedparser==6.0.11
 beautifulsoup4==4.12.3
+
+# Utils
+python-dotenv==1.0.1
 aiofiles==24.1.0
+orjson==3.10.12
+
+# NLP (Word Trend)
+konlpy==0.6.0
+
+# Logging
+python-json-logger==2.0.7
+
+# Monitoring
+prometheus-fastapi-instrumentator==7.0.2

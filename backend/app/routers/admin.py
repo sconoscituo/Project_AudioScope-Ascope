@@ -1,133 +1,134 @@
 """
 관리자 API 라우터.
-수동 브리핑 생성 트리거, 빌링 현황 조회, 상세 헬스체크를 제공합니다.
+수동 브리핑 생성, 빌링 현황, 상세 헬스체크, 시스템 통계를 제공합니다.
 """
 
+import asyncio
 import logging
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.models.billing import BillingUsage
 from app.models.briefing import Briefing
+from app.models.listen_history import ListenHistory
+from app.models.user import User
 from app.scheduler.tasks import generate_briefing
+from app.utils.auth import get_current_user
+from app.utils.response import success_response
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 VALID_PERIODS = {"morning", "lunch", "evening"}
 
 
-def _success(data: Any) -> dict:
-    """통일된 성공 응답 포맷을 반환합니다."""
-    return {"success": True, "data": data, "error": None}
+async def admin_required(
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """관리자 권한을 확인합니다."""
+    stmt = select(User).where(User.id == user_id)
+    user = (await db.execute(stmt)).scalar_one_or_none()
+    if user is None or not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return user_id
 
 
 @router.post("/briefings/generate")
 async def trigger_briefing_generation(
     period: str = Query(..., description="morning / lunch / evening"),
-    target_date: date = Query(default=None, description="생성 대상 날짜 (기본: 오늘)"),
-) -> dict:
-    """
-    특정 기간의 브리핑 생성을 수동으로 트리거합니다.
-
-    Args:
-        period: 브리핑 기간
-        target_date: 대상 날짜 (기본값: 오늘)
-
-    Returns:
-        dict: 생성 작업 시작 결과
-    """
+    _: str = Depends(admin_required),
+):
+    """브리핑 생성을 수동으로 트리거합니다."""
     if period not in VALID_PERIODS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid period. Must be one of: {', '.join(VALID_PERIODS)}",
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid period: {period}")
 
-    logger.info("Manual briefing generation triggered: period=%s", period)
-    # 백그라운드에서 실행 (실제 운영에서는 BackgroundTasks 활용 가능)
-    import asyncio
     asyncio.create_task(generate_briefing(period))
-    return _success({"message": f"Briefing generation started for period='{period}'."})
+    return success_response({"message": f"Briefing generation started: {period}"})
 
 
 @router.get("/billing")
 async def get_billing_status(
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    오늘의 Gemini 사용량과 이번 달 Supertone 사용량을 반환합니다.
-
-    Returns:
-        dict: 서비스별 비용 및 요청 수
-    """
+    _: str = Depends(admin_required),
+):
+    """빌링 현황을 반환합니다."""
     today = date.today()
     month_start = date(today.year, today.month, 1)
 
-    # Gemini 일일 사용량
     gemini_stmt = select(
         func.sum(BillingUsage.amount_usd).label("total_usd"),
         func.sum(BillingUsage.request_count).label("total_requests"),
-    ).where(
-        BillingUsage.service == "gemini",
-        BillingUsage.usage_date == today,
-    )
-    gemini_result = await db.execute(gemini_stmt)
-    gemini_row = gemini_result.one()
+    ).where(BillingUsage.service == "gemini", BillingUsage.usage_date == today)
+    gemini = (await db.execute(gemini_stmt)).one()
 
-    # Supertone 월간 사용량
     supertone_stmt = select(
         func.sum(BillingUsage.amount_usd).label("total_usd"),
         func.sum(BillingUsage.request_count).label("total_requests"),
     ).where(
         BillingUsage.service == "supertone",
         BillingUsage.usage_date >= month_start,
-        BillingUsage.usage_date <= today,
     )
-    supertone_result = await db.execute(supertone_stmt)
-    supertone_row = supertone_result.one()
+    supertone = (await db.execute(supertone_stmt)).one()
 
-    from app.config import get_settings
-    settings = get_settings()
-
-    data = {
+    return success_response({
         "gemini": {
             "period": "daily",
-            "date": today.isoformat(),
-            "total_usd": float(gemini_row.total_usd or 0),
-            "total_requests": int(gemini_row.total_requests or 0),
+            "total_usd": float(gemini.total_usd or 0),
+            "total_requests": int(gemini.total_requests or 0),
             "limit_usd": settings.GEMINI_DAILY_LIMIT_USD,
-            "exceeded": float(gemini_row.total_usd or 0) >= settings.GEMINI_DAILY_LIMIT_USD,
+            "exceeded": float(gemini.total_usd or 0) >= settings.GEMINI_DAILY_LIMIT_USD,
         },
         "supertone": {
             "period": "monthly",
-            "month": f"{today.year}-{today.month:02d}",
-            "total_usd": float(supertone_row.total_usd or 0),
-            "total_requests": int(supertone_row.total_requests or 0),
+            "total_usd": float(supertone.total_usd or 0),
+            "total_requests": int(supertone.total_requests or 0),
             "limit_usd": settings.SUPERTONE_MONTHLY_LIMIT_USD,
-            "exceeded": float(supertone_row.total_usd or 0) >= settings.SUPERTONE_MONTHLY_LIMIT_USD,
+            "exceeded": float(supertone.total_usd or 0) >= settings.SUPERTONE_MONTHLY_LIMIT_USD,
         },
-    }
-    logger.info("Billing status fetched: gemini=$%.4f, supertone=$%.4f",
-                data["gemini"]["total_usd"], data["supertone"]["total_usd"])
-    return _success(data)
+    })
+
+
+@router.get("/stats")
+async def get_system_stats(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(admin_required),
+):
+    """시스템 통계를 반환합니다."""
+    total_users = (await db.execute(select(func.count()).select_from(User))).scalar_one()
+    active_users = (await db.execute(
+        select(func.count()).select_from(User).where(User.is_active.is_(True))
+    )).scalar_one()
+    premium_users = (await db.execute(
+        select(func.count()).select_from(User).where(User.is_premium.is_(True))
+    )).scalar_one()
+    total_briefings = (await db.execute(
+        select(func.count()).select_from(Briefing).where(Briefing.status == "completed")
+    )).scalar_one()
+    total_listens = (await db.execute(
+        select(func.count()).select_from(ListenHistory)
+    )).scalar_one()
+
+    return success_response({
+        "users": {"total": total_users, "active": active_users, "premium": premium_users},
+        "briefings": {"total_completed": total_briefings},
+        "listens": {"total": total_listens},
+    })
 
 
 @router.get("/health")
 async def detailed_health(
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    DB 연결, 최근 브리핑 상태, 스케줄러 상태를 포함한 상세 헬스체크를 반환합니다.
-
-    Returns:
-        dict: 시스템 각 컴포넌트의 상태
-    """
-    # DB 연결 확인
+    _: str = Depends(admin_required),
+):
+    """상세 헬스체크를 반환합니다."""
     db_ok = False
     try:
         await db.execute(select(1))
@@ -135,23 +136,27 @@ async def detailed_health(
     except Exception as exc:
         logger.error("DB health check failed: %s", exc)
 
-    # 최근 브리핑 상태
     today = date.today()
     stmt = select(Briefing).where(Briefing.scheduled_date == today)
-    result = await db.execute(stmt)
-    today_briefings = result.scalars().all()
-    briefing_status = {
-        b.period: b.status for b in today_briefings
-    }
+    today_briefings = (await db.execute(stmt)).scalars().all()
+    briefing_status = {b.period: b.status for b in today_briefings}
 
-    # 스케줄러 상태
     from app.scheduler.tasks import scheduler
     scheduler_running = scheduler.running
 
-    data = {
+    redis_ok = False
+    try:
+        from app.database import get_redis
+        redis = await get_redis()
+        await redis.ping()
+        redis_ok = True
+    except Exception:
+        pass
+
+    return success_response({
         "database": "ok" if db_ok else "error",
+        "redis": "ok" if redis_ok else "error",
         "scheduler": "running" if scheduler_running else "stopped",
         "today_briefings": briefing_status,
-    }
-    logger.info("Detailed health check: db=%s, scheduler=%s", data["database"], data["scheduler"])
-    return _success(data)
+        "environment": settings.ENVIRONMENT,
+    })

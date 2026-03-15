@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
-/// 오디오 플레이어 위젯.
-/// 재생/정지, 진행바, 재생 시간을 표시합니다.
+import '../../core/api/api_client.dart';
+import '../../core/theme/app_theme.dart';
+
+/// 프리미엄 오디오 플레이어 위젯.
+/// 재생/정지, 진행바, 시간 표시, 속도 조절, 청취 기록.
 class AudioPlayerWidget extends StatefulWidget {
   final String audioUrl;
+  final String briefingId;
 
-  const AudioPlayerWidget({super.key, required this.audioUrl});
+  const AudioPlayerWidget({
+    super.key,
+    required this.audioUrl,
+    this.briefingId = '',
+  });
 
   @override
   State<AudioPlayerWidget> createState() => _AudioPlayerWidgetState();
@@ -14,8 +22,9 @@ class AudioPlayerWidget extends StatefulWidget {
 
 class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   late final AudioPlayer _player;
-  bool _isLoading = false;
-  String? _errorMessage;
+  bool _isLoading = true;
+  String? _error;
+  double _speed = 1.0;
 
   @override
   void initState() {
@@ -24,98 +33,128 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     _initPlayer();
   }
 
-  /// 오디오 플레이어를 초기화하고 URL을 로드합니다.
   Future<void> _initPlayer() async {
-    setState(() => _isLoading = true);
     try {
       await _player.setUrl(widget.audioUrl);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = '오디오 로드 실패: $e');
-      }
-    } finally {
       if (mounted) setState(() => _isLoading = false);
+
+      // 재생 완료 시 청취 기록
+      _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          _recordListenProgress(completed: true);
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() { _error = '오디오 로드 실패'; _isLoading = false; });
     }
+  }
+
+  Future<void> _recordListenProgress({bool completed = false}) async {
+    if (widget.briefingId.isEmpty) return;
+    try {
+      await ApiClient().post('/api/v1/briefings/listen', data: {
+        'briefing_id': widget.briefingId,
+        'listened_seconds': _player.position.inSeconds,
+        'completed': completed,
+      });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _recordListenProgress();
     _player.dispose();
     super.dispose();
   }
 
-  /// Duration을 mm:ss 형식 문자열로 변환합니다.
   String _formatDuration(Duration? d) {
     if (d == null) return '--:--';
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  void _cycleSpeed() {
+    final speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+    final idx = speeds.indexOf(_speed);
+    final next = speeds[(idx + 1) % speeds.length];
+    setState(() => _speed = next);
+    _player.setSpeed(next);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_errorMessage != null) {
-      return Text(_errorMessage!,
-          style: TextStyle(color: Theme.of(context).colorScheme.error));
+    if (_error != null) {
+      return Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 13));
     }
-
     if (_isLoading) {
       return const SizedBox(
-        height: 48,
-        child: Center(child: CircularProgressIndicator()),
+        height: 60,
+        child: Center(child: CircularProgressIndicator(color: AppColors.accent)),
       );
     }
 
     return StreamBuilder<PlayerState>(
       stream: _player.playerStateStream,
-      builder: (context, playerSnapshot) {
-        final playerState = playerSnapshot.data;
-        final isPlaying = playerState?.playing ?? false;
-        final processingState = playerState?.processingState;
+      builder: (context, snapshot) {
+        final state = snapshot.data;
+        final isPlaying = state?.playing ?? false;
+        final processing = state?.processingState;
 
         return Column(
           children: [
             // 진행바
             StreamBuilder<Duration>(
               stream: _player.positionStream,
-              builder: (context, posSnapshot) {
-                final position = posSnapshot.data ?? Duration.zero;
-                final duration = _player.duration ?? Duration.zero;
-                final progress = duration.inMilliseconds > 0
-                    ? position.inMilliseconds / duration.inMilliseconds
+              builder: (context, posSnap) {
+                final pos = posSnap.data ?? Duration.zero;
+                final dur = _player.duration ?? Duration.zero;
+                final progress = dur.inMilliseconds > 0
+                    ? pos.inMilliseconds / dur.inMilliseconds
                     : 0.0;
 
                 return Column(
                   children: [
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
-                        thumbShape:
-                            const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        trackHeight: 4,
+                        activeTrackColor: AppColors.accent,
+                        inactiveTrackColor: AppColors.surfaceLight,
+                        thumbColor: AppColors.accent,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
                       ),
                       child: Slider(
                         value: progress.clamp(0.0, 1.0),
-                        onChanged: (value) {
-                          final seekTo = Duration(
-                            milliseconds:
-                                (value * duration.inMilliseconds).round(),
-                          );
-                          _player.seek(seekTo);
+                        onChanged: (v) {
+                          _player.seek(Duration(
+                            milliseconds: (v * dur.inMilliseconds).round(),
+                          ));
                         },
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            _formatDuration(position),
-                            style: Theme.of(context).textTheme.bodySmall,
+                            _formatDuration(pos),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textTertiary,
+                            ),
                           ),
                           Text(
-                            _formatDuration(_player.duration),
-                            style: Theme.of(context).textTheme.bodySmall,
+                            _formatDuration(dur),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textTertiary,
+                            ),
                           ),
                         ],
                       ),
@@ -125,59 +164,104 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               },
             ),
 
-            // 컨트롤 버튼
+            const SizedBox(height: 8),
+
+            // 컨트롤
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 10초 뒤로
+                // 속도
+                GestureDetector(
+                  onTap: _cycleSpeed,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      '${_speed}x',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                // 15초 뒤로
                 IconButton(
-                  icon: const Icon(Icons.replay_10),
+                  icon: const Icon(Icons.replay_10_rounded, color: AppColors.textSecondary),
+                  iconSize: 28,
                   onPressed: () {
-                    final newPos = _player.position - const Duration(seconds: 10);
+                    final newPos = _player.position - const Duration(seconds: 15);
                     _player.seek(newPos < Duration.zero ? Duration.zero : newPos);
                   },
                 ),
 
                 // 재생/정지
                 const SizedBox(width: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: processingState == ProcessingState.loading ||
-                          processingState == ProcessingState.buffering
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
+                GestureDetector(
+                  onTap: () {
+                    if (processing == ProcessingState.loading ||
+                        processing == ProcessingState.buffering) return;
+                    isPlaying ? _player.pause() : _player.play();
+                  },
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.accent,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.accent.withOpacity(0.3),
+                          blurRadius: 16,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: processing == ProcessingState.loading ||
+                            processing == ProcessingState.buffering
+                        ? const Padding(
+                            padding: EdgeInsets.all(16),
                             child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                              strokeWidth: 2.5,
                               color: Colors.white,
                             ),
-                          ),
-                        )
-                      : IconButton(
-                          icon: Icon(
-                            isPlaying ? Icons.pause : Icons.play_arrow,
+                          )
+                        : Icon(
+                            isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
                             color: Colors.white,
-                            size: 28,
+                            size: 32,
                           ),
-                          onPressed: isPlaying ? _player.pause : _player.play,
-                        ),
+                  ),
                 ),
                 const SizedBox(width: 8),
 
-                // 10초 앞으로
+                // 15초 앞으로
                 IconButton(
-                  icon: const Icon(Icons.forward_10),
+                  icon: const Icon(Icons.forward_10_rounded, color: AppColors.textSecondary),
+                  iconSize: 28,
                   onPressed: () {
-                    final duration = _player.duration;
-                    if (duration == null) return;
-                    final newPos = _player.position + const Duration(seconds: 10);
-                    _player.seek(newPos > duration ? duration : newPos);
+                    final dur = _player.duration;
+                    if (dur == null) return;
+                    final newPos = _player.position + const Duration(seconds: 15);
+                    _player.seek(newPos > dur ? dur : newPos);
                   },
+                ),
+
+                const SizedBox(width: 16),
+
+                // Share
+                IconButton(
+                  icon: const Icon(Icons.share_rounded, color: AppColors.textTertiary),
+                  iconSize: 22,
+                  onPressed: () {},
                 ),
               ],
             ),

@@ -1,10 +1,9 @@
 """
-빌링 모니터링 서비스 모듈.
-Gemini/Supertone 사용량이 한도를 초과하면 Slack으로 알림을 발송합니다.
+빌링 모니터링 + Slack 알림 서비스 모듈.
+빌링 한도 초과, 어뷰징, 문의하기 알림을 Slack Webhook으로 발송합니다.
 """
 
 import logging
-from calendar import monthrange
 from datetime import date
 
 import httpx
@@ -19,13 +18,7 @@ settings = get_settings()
 
 
 async def check_daily_gemini_usage(db: AsyncSession) -> None:
-    """
-    오늘 Gemini API 사용량이 일일 한도를 초과했는지 확인하고,
-    초과 시 Slack 알림을 발송합니다.
-
-    Args:
-        db: DB 세션
-    """
+    """Gemini 일일 사용량 한도 초과 여부를 확인합니다."""
     today = date.today()
     stmt = select(func.sum(BillingUsage.amount_usd)).where(
         BillingUsage.service == "gemini",
@@ -37,25 +30,15 @@ async def check_daily_gemini_usage(db: AsyncSession) -> None:
     logger.info("Gemini daily usage: $%.4f / $%.2f limit", total_usd, settings.GEMINI_DAILY_LIMIT_USD)
 
     if total_usd >= settings.GEMINI_DAILY_LIMIT_USD:
-        message = (
-            f":warning: *AudioScope 빌링 경보*\n"
-            f"Gemini API 일일 사용량이 한도를 초과했습니다.\n"
-            f"• 오늘 사용량: ${total_usd:.4f}\n"
-            f"• 일일 한도: ${settings.GEMINI_DAILY_LIMIT_USD:.2f}\n"
-            f"• 날짜: {today}"
+        await send_slack_alert(
+            f":warning: *빌링 경보* Gemini 일일 한도 초과\n"
+            f"- 사용량: ${total_usd:.4f} / ${settings.GEMINI_DAILY_LIMIT_USD:.2f}\n"
+            f"- 날짜: {today}"
         )
-        await send_slack_alert(message)
-        logger.warning("Gemini daily limit exceeded: $%.4f", total_usd)
 
 
 async def check_monthly_supertone_usage(db: AsyncSession) -> None:
-    """
-    이번 달 Supertone API 사용량이 월간 한도를 초과했는지 확인하고,
-    초과 시 Slack 알림을 발송합니다.
-
-    Args:
-        db: DB 세션
-    """
+    """Supertone 월간 사용량 한도 초과 여부를 확인합니다."""
     today = date.today()
     month_start = date(today.year, today.month, 1)
 
@@ -67,44 +50,46 @@ async def check_monthly_supertone_usage(db: AsyncSession) -> None:
     result = await db.execute(stmt)
     total_usd: float = result.scalar_one_or_none() or 0.0
 
-    logger.info(
-        "Supertone monthly usage: $%.4f / $%.2f limit",
-        total_usd, settings.SUPERTONE_MONTHLY_LIMIT_USD,
-    )
-
     if total_usd >= settings.SUPERTONE_MONTHLY_LIMIT_USD:
-        message = (
-            f":rotating_light: *AudioScope 빌링 경보*\n"
-            f"Supertone API 월간 사용량이 한도를 초과했습니다.\n"
-            f"• 이번 달 사용량: ${total_usd:.4f}\n"
-            f"• 월간 한도: ${settings.SUPERTONE_MONTHLY_LIMIT_USD:.2f}\n"
-            f"• 기간: {month_start} ~ {today}"
+        await send_slack_alert(
+            f":rotating_light: *빌링 경보* Supertone 월간 한도 초과\n"
+            f"- 사용량: ${total_usd:.4f} / ${settings.SUPERTONE_MONTHLY_LIMIT_USD:.2f}\n"
+            f"- 기간: {month_start} ~ {today}"
         )
-        await send_slack_alert(message)
-        logger.warning("Supertone monthly limit exceeded: $%.4f", total_usd)
 
 
 async def send_slack_alert(message: str) -> None:
-    """
-    Slack Incoming Webhook으로 알림 메시지를 전송합니다.
-
-    Args:
-        message: 전송할 메시지 (Slack markdown 지원)
-    """
+    """Slack Incoming Webhook으로 알림을 전송합니다."""
     if not settings.SLACK_WEBHOOK_URL:
-        logger.warning("SLACK_WEBHOOK_URL not configured. Skipping alert: %s", message)
+        logger.warning("SLACK_WEBHOOK_URL not set. Alert skipped: %s", message[:100])
         return
 
-    payload = {"text": message}
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(settings.SLACK_WEBHOOK_URL, json=payload)
+            response = await client.post(
+                settings.SLACK_WEBHOOK_URL, json={"text": message}
+            )
             response.raise_for_status()
-        logger.info("Slack alert sent successfully.")
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Slack webhook HTTP error: status=%d, body=%s",
-            exc.response.status_code, exc.response.text,
-        )
+        logger.info("Slack alert sent.")
     except Exception as exc:
-        logger.error("Slack alert failed: %s", exc, exc_info=True)
+        logger.error("Slack alert failed: %s", exc)
+
+
+async def send_abuse_alert(ip: str, path: str, detail: str) -> None:
+    """어뷰징 감지 Slack 알림을 발송합니다."""
+    await send_slack_alert(
+        f":rotating_light: *어뷰징 감지*\n"
+        f"- IP: `{ip}`\n- 경로: `{path}`\n- 상세: {detail}"
+    )
+
+
+async def send_inquiry_alert(
+    user_email: str, user_id: str, subject: str, message: str
+) -> None:
+    """고객 문의 Slack 알림을 발송합니다."""
+    await send_slack_alert(
+        f":envelope: *고객 문의*\n"
+        f"- 사용자: {user_email} (`{user_id}`)\n"
+        f"- 제목: {subject}\n"
+        f"- 내용: {message[:500]}"
+    )

@@ -4,7 +4,10 @@ pydantic-settings를 사용하여 환경변수를 로드하고 검증합니다.
 """
 
 import logging
+import os
 from functools import lru_cache
+
+from pydantic import FieldValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -14,65 +17,93 @@ class Settings(BaseSettings):
     """애플리케이션 전체 설정 클래스."""
 
     model_config = SettingsConfigDict(
-        env_file=".env.development",
+        env_file=f".env.{os.getenv('ENVIRONMENT', 'development')}",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
 
-    # Database
-    DATABASE_URL: str
+    # ── Database ──
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/audioscope_dev"
 
-    # Firebase
+    # ── Redis ──
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # ── Firebase ──
     FIREBASE_CREDENTIALS_PATH: str = "./firebase-credentials.json"
 
-    # AI / TTS
-    GEMINI_API_KEY: str
-    SUPERTONE_API_KEY: str
+    # ── AI / TTS ──
+    GEMINI_API_KEY: str = ""
+    SUPERTONE_API_KEY: str = ""
 
-    # Naver News API
-    NAVER_CLIENT_ID: str
-    NAVER_CLIENT_SECRET: str
+    # ── Naver News API ──
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
 
-    # Cloudflare R2
-    R2_ACCOUNT_ID: str
-    R2_ACCESS_KEY_ID: str
-    R2_SECRET_ACCESS_KEY: str
-    R2_BUCKET_NAME: str
-    R2_PUBLIC_URL: str
+    # ── Cloudflare R2 ──
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = "audioscope-dev"
+    R2_PUBLIC_URL: str = ""
 
-    # JWT
-    JWT_SECRET_KEY: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 60
-
-    # App
+    # ── App ──
     ENVIRONMENT: str = "development"
 
-    # Billing limits
+    # ── JWT ──
+    JWT_SECRET_KEY: str = "change-this-in-production-minimum-32-chars"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_EXPIRE_MINUTES: int = 60
+    JWT_REFRESH_EXPIRE_DAYS: int = 30
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret(cls, v: str, info: FieldValidationInfo) -> str:
+        env = (info.data or {}).get("ENVIRONMENT", "development")
+        if env == "production" and v == "change-this-in-production-minimum-32-chars":
+            raise ValueError(
+                "JWT_SECRET_KEY must be changed from the default value in production."
+            )
+        return v
+
+    APP_VERSION: str = "1.0.0"
+
+    # ── Billing limits ──
     GEMINI_DAILY_LIMIT_USD: float = 1.0
     SUPERTONE_MONTHLY_LIMIT_USD: float = 30.0
 
-    # Rate limiting
-    RATE_LIMIT_PER_MINUTE: int = 50
+    # ── Rate limiting ──
+    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_BURST: int = 10
 
-    # Slack alerting
+    # ── Slack alerting ──
     SLACK_WEBHOOK_URL: str = ""
+
+    # ── Freemium ──
+    FREE_BRIEFING_PERIOD: str = "morning"
+    PREMIUM_PRICE_KRW_MONTHLY: int = 4900
+    PREMIUM_PRICE_KRW_YEARLY: int = 39000
+    TRIAL_DAYS: int = 7
+
+    # ── Briefing ──
+    MAX_ARTICLES_PER_BRIEFING: int = 12
+    BRIEFING_SCRIPT_MIN_CHARS: int = 500
+    BRIEFING_SCRIPT_MAX_CHARS: int = 1200
+
+    # ── News Categories (기본값) ──
+    DEFAULT_CATEGORIES: str = "politics,economy,society,world,tech,science"
 
     @property
     def is_production(self) -> bool:
-        """운영 환경 여부를 반환합니다."""
         return self.ENVIRONMENT == "production"
+
+    @property
+    def default_category_list(self) -> list[str]:
+        return [c.strip() for c in self.DEFAULT_CATEGORIES.split(",")]
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    """
-    설정 싱글톤을 반환합니다.
-
-    Returns:
-        Settings: 애플리케이션 설정 인스턴스
-    """
     settings = Settings()
     logger.info("Settings loaded for environment: %s", settings.ENVIRONMENT)
     return settings

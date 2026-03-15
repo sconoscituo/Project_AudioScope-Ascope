@@ -1,51 +1,47 @@
 """
 사용자 API 라우터.
-Firebase 토큰 기반 로그인/회원가입, 내 정보 조회, 회원탈퇴를 제공합니다.
+인증, 프로필, 카테고리 선호도, 문의하기를 제공합니다.
 """
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse
+from app.models.user import User, UserCategoryPreference, NEWS_CATEGORIES
+from app.schemas.user import (
+    CategoryUpdateRequest,
+    UserCreate,
+    UserResponse,
+    UserUpdateRequest,
+)
+from app.services.billing_monitor import send_inquiry_alert
 from app.utils.auth import create_jwt_token, get_current_user, verify_firebase_token
+from app.utils.response import success_response, error_response
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
-
-
-def _success(data: Any) -> dict:
-    """통일된 성공 응답 포맷을 반환합니다."""
-    return {"success": True, "data": data, "error": None}
 
 
 @router.post("/auth")
 async def authenticate(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    Firebase ID 토큰으로 로그인하거나 신규 회원을 등록합니다.
-
-    Args:
-        body: Firebase ID 토큰 포함 요청 바디
-
-    Returns:
-        dict: JWT 액세스 토큰 및 사용자 정보
-    """
+):
+    """Firebase ID 토큰으로 로그인/회원가입하고 JWT를 발급합니다."""
     decoded = verify_firebase_token(body.firebase_token)
     firebase_uid: str = decoded["uid"]
     email: str | None = decoded.get("email")
     display_name: str | None = decoded.get("name")
+    photo_url: str | None = decoded.get("picture")
     provider: str = decoded.get("firebase", {}).get("sign_in_provider", "unknown")
 
-    # provider 정규화 (google.com -> google)
+    # provider 정규화
     if "google" in provider:
         provider = "google"
     elif "apple" in provider:
@@ -53,34 +49,56 @@ async def authenticate(
     elif "kakao" in provider or "oidc" in provider:
         provider = "kakao"
 
-    stmt = select(User).where(User.firebase_uid == firebase_uid)
+    stmt = select(User).where(User.firebase_uid == firebase_uid).options(
+        selectinload(User.category_preferences)
+    )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
+    is_new = False
     if user is None:
         user = User(
             firebase_uid=firebase_uid,
             email=email,
             display_name=display_name,
             provider=provider,
+            profile_image_url=photo_url,
         )
         db.add(user)
         await db.flush()
-        logger.info("New user registered: uid=%s, provider=%s", firebase_uid, provider)
+
+        # 기본 카테고리 설정 (연예 제외)
+        default_cats = ["politics", "economy", "society", "world", "tech", "science"]
+        for i, cat in enumerate(default_cats):
+            pref = UserCategoryPreference(
+                user_id=user.id, category=cat, is_enabled=True, priority=i
+            )
+            db.add(pref)
+        await db.flush()
+        is_new = True
+        logger.info("New user: uid=%s, provider=%s", firebase_uid, provider)
     else:
         user.last_login_at = datetime.now(timezone.utc)
         if display_name and not user.display_name:
             user.display_name = display_name
-        logger.info("User logged in: id=%s, provider=%s", user.id, provider)
+        if photo_url and not user.profile_image_url:
+            user.profile_image_url = photo_url
+        logger.info("User login: id=%s", user.id)
 
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
 
     token = create_jwt_token(str(user.id))
-    return _success({
+    categories = [p.category for p in user.category_preferences if p.is_enabled]
+
+    user_data = UserResponse.model_validate(user).model_dump()
+    user_data["categories"] = categories
+
+    return success_response({
         "access_token": token,
         "token_type": "bearer",
-        "user": UserResponse.model_validate(user).model_dump(),
+        "is_new_user": is_new,
+        "user": user_data,
     })
 
 
@@ -88,43 +106,122 @@ async def authenticate(
 async def get_me(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    현재 로그인한 사용자의 정보를 반환합니다.
-
-    Returns:
-        dict: 사용자 정보
-    """
-    stmt = select(User).where(User.id == user_id)
+):
+    """현재 로그인한 사용자 정보를 반환합니다."""
+    stmt = (
+        select(User)
+        .where(User.id == user_id)
+        .options(selectinload(User.category_preferences))
+    )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=404, detail="User not found.")
 
-    logger.info("User info fetched: id=%s", user_id)
-    return _success(UserResponse.model_validate(user).model_dump())
+    data = UserResponse.model_validate(user).model_dump()
+    data["categories"] = [p.category for p in user.category_preferences if p.is_enabled]
+    return success_response(data)
+
+
+@router.patch("/me")
+async def update_me(
+    body: UserUpdateRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """사용자 정보를 수정합니다."""
+    stmt = select(User).where(User.id == user_id)
+    user = (await db.execute(stmt)).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if body.display_name is not None:
+        user.display_name = body.display_name
+    if body.fcm_token is not None:
+        user.fcm_token = body.fcm_token
+
+    await db.flush()
+    return success_response({"updated": True})
+
+
+@router.put("/me/categories")
+async def update_categories(
+    body: CategoryUpdateRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """사용자 뉴스 카테고리 선호도를 업데이트합니다."""
+    # 유효한 카테고리만 필터
+    valid = [c for c in body.categories if c in NEWS_CATEGORIES]
+    if not valid:
+        return error_response("최소 1개 카테고리를 선택하세요.", status_code=400)
+
+    # 기존 삭제 후 재생성 (원자적)
+    await db.execute(
+        delete(UserCategoryPreference).where(
+            UserCategoryPreference.user_id == user_id
+        )
+    )
+    for i, cat in enumerate(valid):
+        pref = UserCategoryPreference(
+            user_id=user_id, category=cat, is_enabled=True, priority=i
+        )
+        db.add(pref)
+
+    await db.flush()
+    return success_response({"categories": valid})
+
+
+@router.get("/me/categories")
+async def get_categories(
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """사용자 카테고리 선호도를 반환합니다."""
+    stmt = (
+        select(UserCategoryPreference)
+        .where(UserCategoryPreference.user_id == user_id, UserCategoryPreference.is_enabled.is_(True))
+        .order_by(UserCategoryPreference.priority)
+    )
+    prefs = (await db.execute(stmt)).scalars().all()
+    return success_response({
+        "categories": [p.category for p in prefs],
+        "available": NEWS_CATEGORIES,
+    })
 
 
 @router.delete("/me")
 async def delete_me(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    현재 로그인한 사용자의 계정을 비활성화합니다 (소프트 삭제).
-
-    Returns:
-        dict: 탈퇴 처리 결과
-    """
-    stmt = select(User).where(User.id == user_id)
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-
+):
+    """계정을 비활성화합니다 (소프트 삭제)."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        raise HTTPException(status_code=404, detail="User not found.")
 
     user.is_active = False
-    await db.commit()
+    await db.flush()
     logger.info("User deactivated: id=%s", user_id)
-    return _success({"message": "Account deactivated successfully."})
+    return success_response({"message": "Account deactivated."})
+
+
+class InquiryRequest(BaseModel):
+    subject: str
+    message: str
+
+
+@router.post("/me/inquiry")
+async def submit_inquiry(
+    body: InquiryRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """고객 문의를 Slack으로 전송합니다."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    email = user.email if user else "unknown"
+
+    await send_inquiry_alert(email, str(user_id), body.subject, body.message)
+    logger.info("Inquiry submitted: user=%s, subject=%s", user_id, body.subject)
+    return success_response({"message": "문의가 접수되었습니다."})

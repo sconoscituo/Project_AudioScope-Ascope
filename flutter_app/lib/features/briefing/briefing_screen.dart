@@ -1,270 +1,353 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
-import '../../core/auth/auth_service.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import 'audio_player_widget.dart';
 
-/// 브리핑 데이터 모델.
-class BriefingItem {
-  final String id;
+/// 특정 시간대 브리핑 상세 화면.
+/// 오디오 재생 + 기사 목록 (탭 전환).
+class BriefingDetailScreen extends ConsumerStatefulWidget {
   final String period;
-  final String periodLabel;
-  final String? audioUrl;
-  final String status;
-  final int articleCount;
-  final DateTime? generatedAt;
+  final String? initialTab;
 
-  const BriefingItem({
-    required this.id,
+  const BriefingDetailScreen({
+    super.key,
     required this.period,
-    required this.periodLabel,
-    this.audioUrl,
-    required this.status,
-    required this.articleCount,
-    this.generatedAt,
+    this.initialTab,
   });
 
-  factory BriefingItem.fromJson(Map<String, dynamic> json) {
-    const periodLabels = {
-      'morning': '아침 브리핑',
-      'lunch': '점심 브리핑',
-      'evening': '저녁 브리핑',
-    };
-    return BriefingItem(
-      id: json['id'] as String,
-      period: json['period'] as String,
-      periodLabel: periodLabels[json['period']] ?? json['period'] as String,
-      audioUrl: json['audio_url'] as String?,
-      status: json['status'] as String,
-      articleCount: json['article_count'] as int? ?? 0,
-      generatedAt: json['generated_at'] != null
-          ? DateTime.tryParse(json['generated_at'] as String)
-          : null,
-    );
-  }
+  @override
+  ConsumerState<BriefingDetailScreen> createState() =>
+      _BriefingDetailScreenState();
 }
 
-/// 오늘의 브리핑 목록을 로드하는 Provider.
-final todayBriefingsProvider =
-    FutureProvider<List<BriefingItem>>((ref) async {
-  final response = await ApiClient().get<Map<String, dynamic>>(
-    '/api/v1/briefings/today',
-  );
-  final data = response.data?['data'] as List<dynamic>? ?? [];
-  return data
-      .map((item) => BriefingItem.fromJson(item as Map<String, dynamic>))
-      .toList();
-});
-
-/// 메인 브리핑 화면.
-/// 오늘의 아침/점심/저녁 3개 브리핑 카드를 표시합니다.
-class BriefingScreen extends ConsumerWidget {
-  const BriefingScreen({super.key});
+class _BriefingDetailScreenState extends ConsumerState<BriefingDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  Map<String, dynamic>? _briefing;
+  bool _loading = true;
+  String? _error;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final briefingsAsync = ref.watch(todayBriefingsProvider);
-    final today = DateFormat('yyyy년 M월 d일 (E)', 'ko_KR').format(DateTime.now());
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('AudioScope'),
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: '로그아웃',
-            onPressed: () async {
-              await AuthService.instance.signOut();
-              if (context.mounted) context.go('/login');
-            },
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(todayBriefingsProvider),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      today,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '오늘의 뉴스 브리핑',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            briefingsAsync.when(
-              data: (briefings) => briefings.isEmpty
-                  ? const SliverFillRemaining(
-                      child: Center(
-                        child: Text('아직 생성된 브리핑이 없습니다.\n잠시 후 다시 확인해주세요.'),
-                      ),
-                    )
-                  : SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          child: _BriefingCard(item: briefings[index]),
-                        ),
-                        childCount: briefings.length,
-                      ),
-                    ),
-              loading: () => const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (error, _) => SliverFillRemaining(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                      const SizedBox(height: 12),
-                      Text('불러오기 실패: $error'),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(todayBriefingsProvider),
-                        child: const Text('다시 시도'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab == 'articles' ? 1 : 0,
     );
+    _loadBriefing();
   }
-}
 
-/// 개별 브리핑 카드 위젯.
-class _BriefingCard extends StatelessWidget {
-  final BriefingItem item;
-
-  const _BriefingCard({required this.item});
-
-  IconData get _periodIcon {
-    switch (item.period) {
-      case 'morning':
-        return Icons.wb_sunny_outlined;
-      case 'lunch':
-        return Icons.wb_cloudy_outlined;
-      case 'evening':
-        return Icons.nights_stay_outlined;
-      default:
-        return Icons.radio_outlined;
+  Future<void> _loadBriefing() async {
+    try {
+      final response = await ApiClient().get<Map<String, dynamic>>(
+        '/api/v1/briefings/${widget.period}',
+      );
+      final data = ApiClient.extractData<Map<String, dynamic>>(response);
+      if (mounted) setState(() { _briefing = data; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final isReady = item.status == 'completed' && item.audioUrl != null;
-    final isGenerating = item.status == 'generating' || item.status == 'pending';
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(_periodIcon,
-                    color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  item.periodLabel,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const Spacer(),
-                _StatusChip(status: item.status),
-              ],
-            ),
-            if (item.articleCount > 0) ...[
-              const SizedBox(height: 6),
-              Text(
-                '기사 ${item.articleCount}건 요약',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            if (isReady)
-              AudioPlayerWidget(audioUrl: item.audioUrl!)
-            else if (isGenerating)
-              const Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 8),
-                  Text('브리핑 생성 중...'),
-                ],
-              )
-            else
-              Text(
-                '브리핑을 준비하지 못했습니다.',
-                style: TextStyle(
-                    color: Theme.of(context).colorScheme.error),
-              ),
+  @override
+  Widget build(BuildContext context) {
+    final title = AppConstants.periodLabels[widget.period] ?? '브리핑';
+
+    return Scaffold(
+      backgroundColor: AppColors.primary,
+      appBar: AppBar(
+        title: Text(title),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => context.pop(),
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: AppColors.accent,
+          labelColor: AppColors.accent,
+          unselectedLabelColor: AppColors.textTertiary,
+          tabs: const [
+            Tab(text: '오디오 브리핑'),
+            Tab(text: '기사 목록'),
           ],
         ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : _error != null
+              ? Center(child: Text('로딩 실패', style: TextStyle(color: AppColors.error)))
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _AudioTab(briefing: _briefing!),
+                    _ArticlesTab(briefing: _briefing!),
+                  ],
+                ),
+    );
+  }
+}
+
+/// 오디오 재생 탭.
+class _AudioTab extends StatelessWidget {
+  final Map<String, dynamic> briefing;
+  const _AudioTab({required this.briefing});
+
+  @override
+  Widget build(BuildContext context) {
+    final audioUrl = briefing['audio_url'] as String?;
+    final script = briefing['script'] as String?;
+    final articleCount = briefing['article_count'] as int? ?? 0;
+    final duration = briefing['audio_duration_seconds'] as int?;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 재생 카드
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.premiumGradientStart, AppColors.surfaceCard],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+            ),
+            child: Column(
+              children: [
+                // 큰 헤드셋 아이콘
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.accent.withOpacity(0.15),
+                  ),
+                  child: const Icon(
+                    Icons.headphones_rounded,
+                    size: 40,
+                    color: AppColors.accent,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  briefing['title'] as String? ?? '오늘의 브리핑',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '기사 $articleCount건${duration != null ? ' · ${(duration / 60).ceil()}분' : ''}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                if (audioUrl != null)
+                  AudioPlayerWidget(
+                    audioUrl: audioUrl,
+                    briefingId: briefing['id'] as String? ?? '',
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 스크립트 (눈으로 보기)
+          if (script != null && script.isNotEmpty) ...[
+            const Text(
+              '브리핑 스크립트',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceCard,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                script,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppColors.textSecondary,
+                  height: 1.8,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 }
 
-/// 브리핑 상태 표시 칩.
-class _StatusChip extends StatelessWidget {
-  final String status;
-
-  const _StatusChip({required this.status});
+/// 기사 목록 탭.
+class _ArticlesTab extends StatelessWidget {
+  final Map<String, dynamic> briefing;
+  const _ArticlesTab({required this.briefing});
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = switch (status) {
-      'completed' => ('완료', Colors.green),
-      'generating' => ('생성중', Colors.orange),
-      'pending' => ('대기중', Colors.blue),
-      _ => ('실패', Colors.red),
-    };
+    final articles = (briefing['articles'] as List<dynamic>?) ?? [];
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-            fontSize: 11, color: color, fontWeight: FontWeight.w600),
+    if (articles.isEmpty) {
+      return const Center(
+        child: Text('기사가 없습니다', style: TextStyle(color: AppColors.textSecondary)),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: articles.length,
+      itemBuilder: (context, index) {
+        final article = articles[index] as Map<String, dynamic>;
+        return _ArticleCard(article: article, index: index);
+      },
+    );
+  }
+}
+
+class _ArticleCard extends StatelessWidget {
+  final Map<String, dynamic> article;
+  final int index;
+
+  const _ArticleCard({required this.article, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = article['title'] as String? ?? '';
+    final summary = article['summary'] as String? ?? '';
+    final source = article['source'] as String? ?? '';
+    final category = article['category'] as String?;
+    final thumbnailUrl = article['thumbnail_url'] as String?;
+
+    return GestureDetector(
+      onTap: () {
+        final id = article['id'];
+        if (id != null) context.push('/article/$id');
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceCard,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 번호
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.accent,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (category != null) ...[
+                    Text(
+                      AppConstants.categoryLabels[category] ?? category,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.categoryColor(category),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (summary.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      summary,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                        height: 1.5,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (source.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      source,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (thumbnailUrl != null) ...[
+              const SizedBox(width: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  thumbnailUrl,
+                  width: 70,
+                  height: 70,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
