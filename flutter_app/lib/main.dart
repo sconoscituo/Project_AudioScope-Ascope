@@ -17,6 +17,9 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/subscription/subscription_screen.dart';
+import 'features/support/faq_screen.dart';
+import 'features/support/privacy_screen.dart';
+import 'features/support/terms_screen.dart';
 import 'features/trends/trends_screen.dart';
 
 void main() async {
@@ -132,6 +135,20 @@ final _router = GoRouter(
     GoRoute(
       path: '/subscription',
       builder: (context, state) => const SubscriptionScreen(),
+    ),
+
+    // 고객지원
+    GoRoute(
+      path: '/faq',
+      builder: (context, state) => const FaqScreen(),
+    ),
+    GoRoute(
+      path: '/terms',
+      builder: (context, state) => const TermsScreen(),
+    ),
+    GoRoute(
+      path: '/privacy',
+      builder: (context, state) => const PrivacyScreen(),
     ),
   ],
 );

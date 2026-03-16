@@ -57,6 +57,12 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/categories/edit'),
           ),
           _SettingsTile(
+            icon: Icons.help_outline_rounded,
+            title: '자주 묻는 질문',
+            subtitle: 'FAQ',
+            onTap: () => context.push('/faq'),
+          ),
+          _SettingsTile(
             icon: Icons.mail_outline_rounded,
             title: '문의하기',
             subtitle: '불편사항이나 건의사항을 알려주세요',
@@ -65,12 +71,12 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.description_outlined,
             title: '이용약관',
-            onTap: () {},
+            onTap: () => context.push('/terms'),
           ),
           _SettingsTile(
             icon: Icons.privacy_tip_outlined,
             title: '개인정보 처리방침',
-            onTap: () {},
+            onTap: () => context.push('/privacy'),
           ),
           const SizedBox(height: 12),
           _SettingsTile(
