@@ -40,8 +40,10 @@ class Settings(BaseSettings):
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
 
-    # ── Firebase Storage ──
-    FIREBASE_STORAGE_BUCKET: str = ""  # e.g. your-project-id.appspot.com
+    # ── Supabase ──
+    SUPABASE_URL: str = ""           # e.g. https://xxxx.supabase.co
+    SUPABASE_SERVICE_KEY: str = ""   # service_role key
+    SUPABASE_STORAGE_BUCKET: str = "audioscope-audio"
 
     # ── App ──
     ENVIRONMENT: str = "development"

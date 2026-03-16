@@ -1,31 +1,25 @@
 """
-Firebase Storage 서비스 모듈.
+Supabase Storage 서비스 모듈.
 오디오 파일 업로드/삭제 및 공개 URL 생성을 담당합니다.
-firebase-admin SDK를 asyncio executor로 래핑하여 이벤트 루프 블로킹을 방지합니다.
+httpx를 사용하여 Supabase Storage REST API를 호출합니다.
 """
 
-import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 
-import firebase_admin
-from firebase_admin import storage as firebase_storage
+import httpx
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fb-storage")
 
+class SupabaseStorage:
+    """Supabase Storage 클라이언트."""
 
-class FirebaseStorage:
-    """Firebase Storage 클라이언트."""
+    _instance: "SupabaseStorage | None" = None
 
-    _instance: "FirebaseStorage | None" = None
-
-    def __new__(cls) -> "FirebaseStorage":
+    def __new__(cls) -> "SupabaseStorage":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -34,58 +28,58 @@ class FirebaseStorage:
     def __init__(self) -> None:
         if self._initialized:
             return
-        try:
-            self._bucket = firebase_storage.bucket(
-                app=firebase_admin.get_app(),
-                name=settings.FIREBASE_STORAGE_BUCKET or None,
-            )
-            logger.info("FirebaseStorage initialized. Bucket: %s", self._bucket.name)
-        except Exception as exc:
-            self._bucket = None
-            logger.warning("FirebaseStorage init failed: %s. Storage disabled.", exc)
+        self._url = settings.SUPABASE_URL.rstrip("/")
+        self._key = settings.SUPABASE_SERVICE_KEY
+        self._bucket = settings.SUPABASE_STORAGE_BUCKET
+        self._headers = {
+            "Authorization": f"Bearer {self._key}",
+            "apikey": self._key,
+        }
+        self._enabled = bool(self._url and self._key and self._bucket)
+        if not self._enabled:
+            logger.warning("Supabase Storage not configured. Storage disabled.")
+        else:
+            logger.info("SupabaseStorage initialized. Bucket: %s", self._bucket)
         self._initialized = True
 
     async def upload_audio(self, file_bytes: bytes, object_key: str) -> str:
-        """오디오를 Firebase Storage에 업로드하고 공개 URL을 반환합니다."""
-        if not self._bucket:
-            logger.warning("Firebase Storage not configured. Returning placeholder URL.")
+        """오디오를 Supabase Storage에 업로드하고 공개 URL을 반환합니다."""
+        if not self._enabled:
             return f"https://placeholder.storage/{object_key}"
 
-        loop = asyncio.get_running_loop()
-        try:
-            await loop.run_in_executor(
-                _executor,
-                partial(self._upload_sync, file_bytes, object_key),
-            )
-            public_url = (
-                f"https://storage.googleapis.com/{self._bucket.name}/{object_key}"
-            )
-            logger.info(
-                "Firebase upload: key=%s, size=%d bytes", object_key, len(file_bytes)
-            )
-            return public_url
-        except Exception as exc:
-            logger.error("Firebase upload failed: key=%s, error=%s", object_key, exc)
-            raise RuntimeError(f"Firebase Storage upload failed: {exc}") from exc
+        upload_url = f"{self._url}/storage/v1/object/{self._bucket}/{object_key}"
+        headers = {**self._headers, "Content-Type": "audio/mpeg"}
 
-    def _upload_sync(self, file_bytes: bytes, object_key: str) -> None:
-        blob = self._bucket.blob(object_key)
-        blob.upload_from_string(file_bytes, content_type="audio/mpeg")
-        blob.make_public()
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            try:
+                response = await client.post(upload_url, content=file_bytes, headers=headers)
+                # 이미 존재하면 upsert
+                if response.status_code == 409:
+                    response = await client.put(upload_url, content=file_bytes, headers=headers)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error("Supabase upload failed: key=%s, status=%d", object_key, exc.response.status_code)
+                raise RuntimeError(f"Supabase Storage upload failed: {exc}") from exc
+
+        public_url = f"{self._url}/storage/v1/object/public/{self._bucket}/{object_key}"
+        logger.info("Supabase upload: key=%s, size=%d bytes", object_key, len(file_bytes))
+        return public_url
 
     async def delete_audio(self, object_key: str) -> bool:
-        """Firebase Storage에서 오디오 파일을 삭제합니다."""
-        if not self._bucket:
+        """Supabase Storage에서 오디오 파일을 삭제합니다."""
+        if not self._enabled:
             return False
-        loop = asyncio.get_running_loop()
-        try:
-            blob = self._bucket.blob(object_key)
-            await loop.run_in_executor(_executor, blob.delete)
-            logger.info("Firebase delete: key=%s", object_key)
-            return True
-        except Exception as exc:
-            logger.error("Firebase delete failed: key=%s, error=%s", object_key, exc)
-            return False
+
+        delete_url = f"{self._url}/storage/v1/object/{self._bucket}/{object_key}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.delete(delete_url, headers=self._headers)
+                response.raise_for_status()
+                logger.info("Supabase delete: key=%s", object_key)
+                return True
+            except httpx.HTTPStatusError as exc:
+                logger.error("Supabase delete failed: key=%s, error=%s", object_key, exc)
+                return False
 
     @staticmethod
     def generate_object_key(period: str, date_str: str) -> str:
