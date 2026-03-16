@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     # ── Database ──
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/audioscope_dev"
 
-    # ── Redis ──
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # ── Redis (선택사항 — 없으면 메모리 기반 Rate Limit 사용) ──
+    REDIS_URL: str = ""
 
     # ── Firebase ──
     FIREBASE_CREDENTIALS_PATH: str = "./firebase-credentials.json"
