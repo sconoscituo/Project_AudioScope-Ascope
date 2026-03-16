@@ -20,7 +20,7 @@ from app.services.billing_monitor import (
     send_slack_alert,
 )
 from app.services.news_fetcher import NaverNewsFetcher
-from app.services.storage import R2Storage
+from app.services.storage import FirebaseStorage
 from app.services.subscription import check_expired_subscriptions
 from app.services.summarizer import GeminiSummarizer
 from app.services.tts import SupertoneTTS
@@ -126,9 +126,9 @@ async def generate_briefing(period: str) -> None:
             tts = SupertoneTTS()
             audio_bytes, duration = await tts.text_to_speech(script, db, voice_id=_voice_id)
 
-            # 4. R2 업로드
-            storage = R2Storage()
-            object_key = R2Storage.generate_object_key(period, today.isoformat())
+            # 4. Firebase Storage 업로드
+            storage = FirebaseStorage()
+            object_key = FirebaseStorage.generate_object_key(period, today.isoformat())
             audio_url = await storage.upload_audio(audio_bytes, object_key)
 
             # 5. DB 업데이트 (원자적)

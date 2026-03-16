@@ -40,12 +40,8 @@ class Settings(BaseSettings):
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
 
-    # ── Cloudflare R2 ──
-    R2_ACCOUNT_ID: str = ""
-    R2_ACCESS_KEY_ID: str = ""
-    R2_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "audioscope-dev"
-    R2_PUBLIC_URL: str = ""
+    # ── Firebase Storage ──
+    FIREBASE_STORAGE_BUCKET: str = ""  # e.g. your-project-id.appspot.com
 
     # ── App ──
     ENVIRONMENT: str = "development"
