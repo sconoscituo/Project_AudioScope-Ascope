@@ -106,3 +106,4 @@ def get_settings() -> Settings:
     settings = Settings()
     logger.info("Settings loaded for environment: %s", settings.ENVIRONMENT)
     return settings
+
