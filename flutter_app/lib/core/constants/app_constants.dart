@@ -7,7 +7,7 @@ class AppConstants {
   static const appDescription = '세상을 AI 아나운서와 함께, 귀로 살피는 세계';
 
   // API
-  static const apiBaseUrl = 'https://your-api-domain.com';
+  static const apiBaseUrl = 'https://audioscope-backend.onrender.com';
   static const tokenKey = 'access_token';
   static const refreshTokenKey = 'refresh_token';
 
