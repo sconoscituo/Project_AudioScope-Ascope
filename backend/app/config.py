@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # ── Firebase ──
     FIREBASE_CREDENTIALS_PATH: str = "./firebase-credentials.json"
+    FIREBASE_CREDENTIALS_JSON: str = ""  # base64-encoded JSON (Render 환경변수용)
 
     # ── AI / TTS ──
     GEMINI_API_KEY: str = ""

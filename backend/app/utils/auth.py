@@ -3,6 +3,8 @@
 Firebase 토큰 검증, JWT 생성/검증, FastAPI 의존성.
 """
 
+import base64
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -27,7 +29,17 @@ def init_firebase() -> None:
     if _firebase_app is not None:
         return
     try:
-        cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+        # 1순위: 환경변수로 전달된 base64 인코딩 JSON
+        if settings.FIREBASE_CREDENTIALS_JSON:
+            val = settings.FIREBASE_CREDENTIALS_JSON.strip()
+            try:
+                cred_dict = json.loads(val)
+            except (json.JSONDecodeError, ValueError):
+                cred_dict = json.loads(base64.b64decode(val))
+            cred = credentials.Certificate(cred_dict)
+        else:
+            # 2순위: 파일 경로
+            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
         _firebase_app = firebase_admin.initialize_app(cred)
         logger.info("Firebase Admin SDK initialized.")
     except FileNotFoundError:

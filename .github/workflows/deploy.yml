@@ -16,22 +16,33 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Inject env vars into Render
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
         run: |
+          python3 - <<'EOF'
+          import json, os
+
+          env_vars = [
+            {"key": "ENVIRONMENT", "value": "production"},
+            {"key": "DATABASE_URL", "value": "${{ secrets.DATABASE_URL }}"},
+            {"key": "JWT_SECRET_KEY", "value": "${{ secrets.JWT_SECRET_KEY }}"},
+            {"key": "GEMINI_API_KEY", "value": "${{ secrets.GEMINI_API_KEY }}"},
+            {"key": "SUPERTONE_API_KEY", "value": "${{ secrets.SUPERTONE_API_KEY }}"},
+            {"key": "NAVER_CLIENT_ID", "value": "${{ secrets.NAVER_CLIENT_ID }}"},
+            {"key": "NAVER_CLIENT_SECRET", "value": "${{ secrets.NAVER_CLIENT_SECRET }}"},
+            {"key": "SUPABASE_URL", "value": "${{ secrets.SUPABASE_URL }}"},
+            {"key": "SUPABASE_SERVICE_KEY", "value": "${{ secrets.SUPABASE_SERVICE_KEY }}"},
+            {"key": "SUPABASE_STORAGE_BUCKET", "value": "${{ secrets.SUPABASE_STORAGE_BUCKET }}"},
+            {"key": "FIREBASE_CREDENTIALS_JSON", "value": os.environ["FIREBASE_CREDENTIALS_JSON"]},
+          ]
+          with open("render_env.json", "w") as f:
+            json.dump(env_vars, f)
+          EOF
+
           curl -s -X PUT "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/env-vars" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '[
-              {"key":"ENVIRONMENT","value":"production"},
-              {"key":"DATABASE_URL","value":"${{ secrets.DATABASE_URL }}"},
-              {"key":"JWT_SECRET_KEY","value":"${{ secrets.JWT_SECRET_KEY }}"},
-              {"key":"GEMINI_API_KEY","value":"${{ secrets.GEMINI_API_KEY }}"},
-              {"key":"SUPERTONE_API_KEY","value":"${{ secrets.SUPERTONE_API_KEY }}"},
-              {"key":"NAVER_CLIENT_ID","value":"${{ secrets.NAVER_CLIENT_ID }}"},
-              {"key":"NAVER_CLIENT_SECRET","value":"${{ secrets.NAVER_CLIENT_SECRET }}"},
-              {"key":"SUPABASE_URL","value":"${{ secrets.SUPABASE_URL }}"},
-              {"key":"SUPABASE_SERVICE_KEY","value":"${{ secrets.SUPABASE_SERVICE_KEY }}"},
-              {"key":"SUPABASE_STORAGE_BUCKET","value":"${{ secrets.SUPABASE_STORAGE_BUCKET }}"}
-            ]'
+            --data-binary @render_env.json
 
       - name: Trigger Render deploy
         run: |
