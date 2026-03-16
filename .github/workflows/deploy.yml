@@ -15,47 +15,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create .env from secrets
+      - name: Inject env vars into Render
         run: |
-          cat > backend/.env << EOF
-          ENVIRONMENT=production
-          DATABASE_URL=${{ secrets.DATABASE_URL }}
-          JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
-          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          SUPERTONE_API_KEY=${{ secrets.SUPERTONE_API_KEY }}
-          NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
-          NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
-          SUPABASE_STORAGE_BUCKET=${{ secrets.SUPABASE_STORAGE_BUCKET }}
-          EOF
+          curl -s -X PUT "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/env-vars" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '[
+              {"key":"ENVIRONMENT","value":"production"},
+              {"key":"DATABASE_URL","value":"${{ secrets.DATABASE_URL }}"},
+              {"key":"JWT_SECRET_KEY","value":"${{ secrets.JWT_SECRET_KEY }}"},
+              {"key":"GEMINI_API_KEY","value":"${{ secrets.GEMINI_API_KEY }}"},
+              {"key":"SUPERTONE_API_KEY","value":"${{ secrets.SUPERTONE_API_KEY }}"},
+              {"key":"NAVER_CLIENT_ID","value":"${{ secrets.NAVER_CLIENT_ID }}"},
+              {"key":"NAVER_CLIENT_SECRET","value":"${{ secrets.NAVER_CLIENT_SECRET }}"},
+              {"key":"SUPABASE_URL","value":"${{ secrets.SUPABASE_URL }}"},
+              {"key":"SUPABASE_SERVICE_KEY","value":"${{ secrets.SUPABASE_SERVICE_KEY }}"},
+              {"key":"SUPABASE_STORAGE_BUCKET","value":"${{ secrets.SUPABASE_STORAGE_BUCKET }}"}
+            ]'
 
-      - name: Build Docker image
-        run: docker build -t audioscope-backend ./backend
-
-      # NOTE: This step requires DEPLOY_HOST, DEPLOY_USER, and DEPLOY_SSH_KEY secrets.
-      # These are optional — skip this step if you are not deploying to a remote server.
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd ~/audioscope
-            git pull origin main
-            cat > backend/.env << 'ENVEOF'
-            ENVIRONMENT=production
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-            SUPERTONE_API_KEY=${{ secrets.SUPERTONE_API_KEY }}
-            NAVER_CLIENT_ID=${{ secrets.NAVER_CLIENT_ID }}
-            NAVER_CLIENT_SECRET=${{ secrets.NAVER_CLIENT_SECRET }}
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
-            SUPABASE_STORAGE_BUCKET=${{ secrets.SUPABASE_STORAGE_BUCKET }}
-            ENVEOF
-            docker compose -f backend/docker-compose.yml pull || true
-            docker compose -f backend/docker-compose.yml up -d --build
-            docker image prune -f
+      - name: Trigger Render deploy
+        run: |
+          curl -s -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}'
