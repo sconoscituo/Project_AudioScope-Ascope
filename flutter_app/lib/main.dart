@@ -33,7 +33,12 @@ void main() async {
     ),
   );
 
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    // google-services.json 또는 GoogleService-Info.plist 미설치 시 무시
+    debugPrint('Firebase init skipped: $e');
+  }
   await initializeDateFormatting('ko_KR');
 
   runApp(const ProviderScope(child: AudioScopeApp()));
