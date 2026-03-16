@@ -11,13 +11,10 @@ from typing import Any
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
 from app.database import close_db_engine, close_redis
-from app.middleware.rate_limiter import limiter
+from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIdMiddleware
 from app.routers import admin, briefings, referrals, subscriptions, trends, users
 from app.scheduler.tasks import setup_scheduler
@@ -60,10 +57,7 @@ app = FastAPI(
 
 # ── Middleware (순서 중요: 위에서 아래로 실행) ──
 app.add_middleware(RequestIdMiddleware)
-
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(RateLimitMiddleware, limit=settings.RATE_LIMIT_PER_MINUTE, window_seconds=60)
 
 app.add_middleware(
     CORSMiddleware,

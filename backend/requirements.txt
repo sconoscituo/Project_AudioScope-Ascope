@@ -29,8 +29,6 @@ google-generativeai==0.8.3
 # Scheduler
 apscheduler==3.10.4
 
-# Rate Limiting
-slowapi==0.1.9
 
 # News Parsing
 feedparser==6.0.11
