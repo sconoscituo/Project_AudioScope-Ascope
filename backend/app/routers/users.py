@@ -19,6 +19,7 @@ from app.schemas.user import (
     UserCreate,
     UserResponse,
     UserUpdateRequest,
+    VoiceUpdateRequest,
 )
 from app.services.billing_monitor import send_inquiry_alert
 from app.utils.auth import create_jwt_token, get_current_user, verify_firebase_token
@@ -205,6 +206,35 @@ async def delete_me(
     await db.flush()
     logger.info("User deactivated: id=%s", user_id)
     return success_response({"message": "Account deactivated."})
+
+
+SUPERTONE_VOICES = [
+    {"id": "ko-KR-female-1", "name": "지수 (차분한 여성)", "gender": "female", "style": "calm"},
+    {"id": "ko-KR-female-2", "name": "하린 (밝은 여성)", "gender": "female", "style": "bright"},
+    {"id": "ko-KR-male-1", "name": "준호 (차분한 남성)", "gender": "male", "style": "calm"},
+    {"id": "ko-KR-male-2", "name": "민준 (힘찬 남성)", "gender": "male", "style": "energetic"},
+]
+
+
+@router.get("/voices")
+async def get_voices():
+    return success_response(data=SUPERTONE_VOICES)
+
+
+@router.patch("/me/voice")
+async def update_voice(
+    body: VoiceUpdateRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    valid_ids = [v["id"] for v in SUPERTONE_VOICES]
+    if body.voice_id not in valid_ids:
+        raise HTTPException(status_code=400, detail="Invalid voice_id")
+    user = (await db.execute(select(User).where(User.firebase_uid == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.preferred_voice_id = body.voice_id
+    return success_response(data={"voice_id": body.voice_id})
 
 
 class InquiryRequest(BaseModel):

@@ -8,11 +8,16 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
 /// 설정 화면. 프로필, 구독, 카테고리, 문의, 로그아웃.
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
     final profileAsync = ref.watch(myProfileProvider);
     final subAsync = ref.watch(subscriptionProvider);
 
@@ -57,6 +62,12 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/categories/edit'),
           ),
           _SettingsTile(
+            icon: Icons.record_voice_over_rounded,
+            title: '음성 선택',
+            subtitle: '브리핑 나레이터 목소리',
+            onTap: () => _showVoiceSelector(context, ref),
+          ),
+          _SettingsTile(
             icon: Icons.help_outline_rounded,
             title: '자주 묻는 질문',
             subtitle: 'FAQ',
@@ -97,6 +108,17 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showVoiceSelector(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surfaceCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _VoiceSelectorSheet(ref: ref),
     );
   }
 
@@ -182,6 +204,107 @@ class SettingsScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _VoiceSelectorSheet extends StatefulWidget {
+  final WidgetRef ref;
+  const _VoiceSelectorSheet({required this.ref});
+
+  @override
+  State<_VoiceSelectorSheet> createState() => _VoiceSelectorSheetState();
+}
+
+class _VoiceSelectorSheetState extends State<_VoiceSelectorSheet> {
+  List<Map<String, dynamic>> _voices = [];
+  bool _loading = true;
+  String? _selectedVoiceId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      // 현재 선택된 음성 가져오기
+      final profile = widget.ref.read(myProfileProvider).valueOrNull;
+      _selectedVoiceId = profile?['preferred_voice_id'] as String? ?? 'ko-KR-female-1';
+
+      // 음성 목록 가져오기
+      final response = await ApiClient().get<Map<String, dynamic>>('/api/v1/users/voices');
+      final data = ApiClient.extractData<List<dynamic>>(response);
+      if (mounted) {
+        setState(() {
+          _voices = data?.cast<Map<String, dynamic>>() ?? [];
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _selectVoice(String voiceId) async {
+    try {
+      await ApiClient().patch('/api/v1/users/me/voice', data: {'voice_id': voiceId});
+      widget.ref.invalidate(myProfileProvider);
+      if (mounted) {
+        setState(() => _selectedVoiceId = voiceId);
+        Navigator.pop(context);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '음성 선택',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
+            )
+          else
+            ..._voices.map((voice) {
+              final id = voice['id'] as String;
+              final name = voice['name'] as String;
+              final isSelected = id == _selectedVoiceId;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: isSelected ? AppColors.accent : AppColors.textPrimary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+                trailing: isSelected
+                    ? const Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => _selectVoice(id),
+              );
+            }),
+        ],
+      ),
     );
   }
 }

@@ -116,9 +116,15 @@ async def generate_briefing(period: str) -> None:
             summarizer = GeminiSummarizer()
             script, metadata = await summarizer.summarize_articles(articles, period, db)
 
-            # 3. TTS 변환
+            # 3. TTS 변환 (첫 번째 활성 사용자의 preferred_voice_id 사용)
+            from app.models.user import User as _User
+            _user_result = await db.execute(
+                select(_User).where(_User.is_active.is_(True)).limit(1)
+            )
+            _user = _user_result.scalar_one_or_none()
+            _voice_id = _user.preferred_voice_id if _user else "ko-KR-female-1"
             tts = SupertoneTTS()
-            audio_bytes, duration = await tts.text_to_speech(script, db)
+            audio_bytes, duration = await tts.text_to_speech(script, db, voice_id=_voice_id)
 
             # 4. R2 업로드
             storage = R2Storage()

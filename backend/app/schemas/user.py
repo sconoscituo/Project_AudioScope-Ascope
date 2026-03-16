@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     total_listen_seconds: int = 0
     created_at: datetime
     last_login_at: datetime | None = None
+    preferred_voice_id: str = "ko-KR-female-1"
     categories: list[str] = []
 
 
@@ -41,3 +42,7 @@ class UserUpdateRequest(BaseModel):
 class CategoryUpdateRequest(BaseModel):
     """카테고리 선호도 업데이트 요청."""
     categories: list[str]
+
+
+class VoiceUpdateRequest(BaseModel):
+    voice_id: str

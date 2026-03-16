@@ -44,6 +44,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     fcm_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    preferred_voice_id: Mapped[str] = mapped_column(String(64), default="ko-KR-female-1", nullable=False)
     profile_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     total_listen_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_listen_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

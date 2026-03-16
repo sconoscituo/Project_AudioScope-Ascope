@@ -265,6 +265,25 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Powered by ',
+                  style: TextStyle(fontSize: 10, color: AppColors.textTertiary),
+                ),
+                Text(
+                  'SUPERTONE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textTertiary.withOpacity(0.8),
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
           ],
         );
       },
