@@ -1,11 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/providers/subscription_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../subscription/paywall_screen.dart';
 import 'audio_player_widget.dart';
+
+/// 하루 무료 재생 허용 횟수.
+const _kFreePlayLimit = 3;
+const _kPlayCountKey = 'free_play_count';
+const _kPlayDateKey = 'free_play_date';
+
+/// 오늘의 무료 재생 횟수를 확인하고 증가시킵니다.
+/// 반환값: 재생 허용 여부 (true = 가능, false = 한계 초과)
+Future<bool> checkAndIncrementFreePlay() async {
+  final prefs = await SharedPreferences.getInstance();
+  final today = DateTime.now().toIso8601String().substring(0, 10); // YYYY-MM-DD
+  final savedDate = prefs.getString(_kPlayDateKey);
+
+  // 날짜가 바뀌면 카운트 리셋
+  if (savedDate != today) {
+    await prefs.setString(_kPlayDateKey, today);
+    await prefs.setInt(_kPlayCountKey, 0);
+  }
+
+  final count = prefs.getInt(_kPlayCountKey) ?? 0;
+  if (count >= _kFreePlayLimit) return false;
+
+  await prefs.setInt(_kPlayCountKey, count + 1);
+  return true;
+}
+
+/// Paywall 바텀시트를 표시합니다.
+Future<void> showPaywall(BuildContext context, {PaywallReason reason = PaywallReason.dailyLimit}) async {
+  await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => PaywallScreen(reason: reason),
+  );
+}
 
 /// 특정 시간대 브리핑 상세 화면.
 /// 오디오 재생 + 기사 목록 (탭 전환).
@@ -39,6 +77,21 @@ class _BriefingDetailScreenState extends ConsumerState<BriefingDetailScreen>
       vsync: this,
       initialIndex: widget.initialTab == 'articles' ? 1 : 0,
     );
+    _checkAccessThenLoad();
+  }
+
+  /// Pro 여부 또는 무료 재생 한도를 확인한 후 브리핑을 로드합니다.
+  Future<void> _checkAccessThenLoad() async {
+    final isPro = ref.read(isProProvider);
+    if (!isPro) {
+      final allowed = await checkAndIncrementFreePlay();
+      if (!allowed && mounted) {
+        // 한도 초과 — 뒤로 가서 paywall 표시
+        Navigator.of(context).pop();
+        await showPaywall(context, reason: PaywallReason.dailyLimit);
+        return;
+      }
+    }
     _loadBriefing();
   }
 

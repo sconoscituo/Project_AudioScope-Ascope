@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/providers.dart';
+import '../../core/providers/subscription_provider.dart';
 import '../../core/theme/app_theme.dart';
 
 /// 구독/프리미엄 화면.
@@ -168,6 +169,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             : AppConstants.premiumYearlyKRW,
       });
       ref.invalidate(subscriptionProvider);
+      await ref.read(subscriptionNotifierProvider.notifier).upgradeToPro();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('프리미엄이 활성화되었습니다!')),
@@ -194,6 +196,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         'price_krw': 0,
       });
       ref.invalidate(subscriptionProvider);
+      await ref.read(subscriptionNotifierProvider.notifier).upgradeToPro();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('무료 체험이 시작되었습니다!')),
