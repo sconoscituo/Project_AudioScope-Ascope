@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.database import close_db_engine, close_redis
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIdMiddleware
-from app.routers import admin, briefings, payments, recommendations, referrals, subscriptions, trends, users
+from app.routers import admin, briefings, favorites, payments, recommendations, referrals, stats, subscriptions, trends, users
 from app.scheduler.tasks import setup_scheduler
 from app.utils.auth import init_firebase
 from app.utils.logger import setup_logging
@@ -110,6 +110,8 @@ app.include_router(recommendations.router)
 app.include_router(payments.router)
 app.include_router(trends.router)
 app.include_router(referrals.router)
+app.include_router(favorites.router)
+app.include_router(stats.router)
 app.include_router(admin.router)
 
 

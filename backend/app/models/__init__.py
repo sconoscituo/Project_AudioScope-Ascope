@@ -2,6 +2,7 @@
 
 from app.models.billing import BillingUsage
 from app.models.briefing import Briefing, BriefingArticle
+from app.models.favorite import FavoriteArticle
 from app.models.listen_history import ListenHistory
 from app.models.referral import Referral
 from app.models.subscription import Subscription
@@ -12,6 +13,7 @@ __all__ = [
     "BillingUsage",
     "Briefing",
     "BriefingArticle",
+    "FavoriteArticle",
     "ListenHistory",
     "Referral",
     "Subscription",

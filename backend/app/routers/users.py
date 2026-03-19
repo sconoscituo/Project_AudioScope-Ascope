@@ -199,6 +199,42 @@ async def get_categories(
     })
 
 
+@router.patch("/me/preferences")
+async def update_preferences(
+    preferred_categories: list[str] | None = None,
+    briefing_times: list[str] | None = None,
+    notification_enabled: bool | None = None,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """사용자 선호도(카테고리, 브리핑 시간대, 알림 여부)를 업데이트합니다."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    VALID_CATEGORIES = set(NEWS_CATEGORIES.keys())
+    VALID_TIMES = {"morning", "lunch", "evening", "night"}
+
+    if preferred_categories is not None:
+        filtered = [c for c in preferred_categories if c in VALID_CATEGORIES]
+        if not filtered:
+            return error_response("유효한 카테고리를 1개 이상 입력하세요.", status_code=400)
+        user.preferred_categories = filtered
+    if briefing_times is not None:
+        filtered_times = [t for t in briefing_times if t in VALID_TIMES]
+        user.briefing_times = filtered_times if filtered_times else user.briefing_times
+    if notification_enabled is not None:
+        user.notification_enabled = notification_enabled
+
+    await db.flush()
+    return success_response({
+        "message": "설정 업데이트 완료",
+        "preferred_categories": user.preferred_categories,
+        "briefing_times": user.briefing_times,
+        "notification_enabled": user.notification_enabled,
+    })
+
+
 @router.delete("/me")
 async def delete_me(
     user_id: str = Depends(get_current_user),

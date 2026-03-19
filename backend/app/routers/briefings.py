@@ -79,20 +79,26 @@ async def get_today_briefings(
 async def get_briefing_history(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
+    categories: str | None = Query(default=None, description="쉼표로 구분된 카테고리 필터 (예: tech,economy)"),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user),
 ):
-    """과거 브리핑 목록을 페이지네이션으로 반환합니다."""
+    """과거 브리핑 목록을 페이지네이션으로 반환합니다. categories 파라미터로 필터링 가능."""
     offset = (page - 1) * size
 
-    count_stmt = select(func.count()).select_from(Briefing).where(
-        Briefing.status == "completed"
-    )
+    # 카테고리 필터 파싱
+    category_list = [c.strip() for c in categories.split(",") if c.strip()] if categories else []
+
+    base_filter = [Briefing.status == "completed"]
+    if category_list:
+        base_filter.append(Briefing.category.in_(category_list))
+
+    count_stmt = select(func.count()).select_from(Briefing).where(*base_filter)
     total = (await db.execute(count_stmt)).scalar_one()
 
     stmt = (
         select(Briefing)
-        .where(Briefing.status == "completed")
+        .where(*base_filter)
         .order_by(Briefing.scheduled_date.desc(), Briefing.period)
         .offset(offset)
         .limit(size)
