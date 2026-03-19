@@ -12,10 +12,12 @@ import 'features/article/article_detail_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/briefing/briefing_screen.dart';
 import 'features/categories/category_screen.dart';
+import 'features/favorites/favorites_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_screen.dart';
+import 'features/stats/stats_screen.dart';
 import 'features/subscription/subscription_screen.dart';
 import 'features/support/faq_screen.dart';
 import 'features/support/privacy_screen.dart';
@@ -98,9 +100,15 @@ final _router = GoRouter(
           ),
         ),
         GoRoute(
-          path: '/trends',
+          path: '/favorites',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: TrendsScreen(),
+            child: FavoritesScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/stats',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: StatsScreen(),
           ),
         ),
         GoRoute(

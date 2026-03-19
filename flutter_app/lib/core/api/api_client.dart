@@ -142,6 +142,38 @@ class ApiClient {
     return _dio.delete<T>(path);
   }
 
+  // ── Favorites API ──
+
+  /// 즐겨찾기 목록 조회.
+  Future<Response<Map<String, dynamic>>> getFavorites() async {
+    return _dio.get<Map<String, dynamic>>('/api/v1/favorites');
+  }
+
+  /// 즐겨찾기 추가.
+  Future<Response<Map<String, dynamic>>> addFavorite(String articleId) async {
+    return _dio.post<Map<String, dynamic>>(
+      '/api/v1/favorites',
+      data: {'article_id': articleId},
+    );
+  }
+
+  /// 즐겨찾기 삭제.
+  Future<Response<Map<String, dynamic>>> deleteFavorite(String favoriteId) async {
+    return _dio.delete<Map<String, dynamic>>('/api/v1/favorites/$favoriteId');
+  }
+
+  // ── Stats API ──
+
+  /// 청취 통계 조회.
+  Future<Response<Map<String, dynamic>>> getListeningStats() async {
+    return _dio.get<Map<String, dynamic>>('/api/v1/stats/listening');
+  }
+
+  /// 주간 청취 통계 조회.
+  Future<Response<Map<String, dynamic>>> getWeeklyListeningStats() async {
+    return _dio.get<Map<String, dynamic>>('/api/v1/stats/listening/weekly');
+  }
+
   /// API 응답에서 data 필드를 추출합니다.
   static T? extractData<T>(Response response) {
     final body = response.data;

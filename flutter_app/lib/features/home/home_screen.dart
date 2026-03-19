@@ -21,7 +21,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
-  final _tabs = ['/home', '/trends', '/settings'];
+  final _tabs = ['/home', '/favorites', '/stats', '/settings'];
 
   @override
   Widget build(BuildContext context) {
@@ -67,16 +67,22 @@ class _BottomNav extends StatelessWidget {
                 onTap: () => onTap(0),
               ),
               _NavItem(
-                icon: Icons.trending_up_rounded,
-                label: '트렌드',
+                icon: Icons.bookmark_outline_rounded,
+                label: '즐겨찾기',
                 selected: currentIndex == 1,
                 onTap: () => onTap(1),
               ),
               _NavItem(
-                icon: Icons.person_outline_rounded,
-                label: '설정',
+                icon: Icons.bar_chart_rounded,
+                label: '통계',
                 selected: currentIndex == 2,
                 onTap: () => onTap(2),
+              ),
+              _NavItem(
+                icon: Icons.person_outline_rounded,
+                label: '설정',
+                selected: currentIndex == 3,
+                onTap: () => onTap(3),
               ),
             ],
           ),
