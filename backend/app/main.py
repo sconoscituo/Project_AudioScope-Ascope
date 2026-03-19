@@ -13,9 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
 from app.config import get_settings
+from app.core.factory import ServiceFactory
 from app.database import close_db_engine, close_redis
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIdMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import admin, briefings, favorites, payments, recommendations, referrals, stats, subscriptions, trends, users
 from app.scheduler.tasks import setup_scheduler
 from app.utils.auth import init_firebase
@@ -32,6 +34,13 @@ async def lifespan(app: FastAPI):
     logger.info("AudioScope starting (env=%s, ver=%s)...", settings.ENVIRONMENT, settings.APP_VERSION)
 
     init_firebase()
+
+    # ServiceFactory 워밍업 (싱글톤 사전 초기화)
+    factory = ServiceFactory()
+    factory.create_news_service()
+    factory.create_tts_service()
+    factory.create_summarizer()
+    logger.info("ServiceFactory initialized: %s", ServiceFactory.initialized_keys())
 
     scheduler = setup_scheduler()
     scheduler.start()
@@ -56,6 +65,7 @@ app = FastAPI(
 )
 
 # ── Middleware (순서 중요: 위에서 아래로 실행) ──
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RateLimitMiddleware, limit=settings.RATE_LIMIT_PER_MINUTE, window_seconds=60)
 
