@@ -12,14 +12,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
 
+from app.config import get_settings as _get_settings
 from app.database import get_db_context
 from app.models.briefing import Briefing, BriefingArticle
+from app.models.user import User
 from app.services.billing_monitor import (
     check_daily_gemini_usage,
     check_monthly_supertone_usage,
     send_slack_alert,
 )
 from app.services.news_fetcher import NaverNewsFetcher
+from app.services.push_notification import FCMService
 from app.services.storage import SupabaseStorage
 from app.services.subscription import check_expired_subscriptions
 from app.services.summarizer import GeminiSummarizer
@@ -117,7 +120,6 @@ async def generate_briefing(period: str) -> None:
             script, metadata = await summarizer.summarize_articles(articles, period, db)
 
             # 3. TTS 변환 (설정의 기본 음성 사용)
-            from app.config import get_settings as _get_settings
             _voice_id = _get_settings().DEFAULT_VOICE_ID
             tts = SupertoneTTS()
             audio_bytes, duration = await tts.text_to_speech(script, db, voice_id=_voice_id)
@@ -167,12 +169,54 @@ async def generate_briefing(period: str) -> None:
             await check_daily_gemini_usage(db)
             await check_monthly_supertone_usage(db)
 
+            # 7. FCM 푸시 알림 (알림 허용 + FCM 토큰 보유 사용자)
+            await _send_briefing_push_notifications(briefing.title or f"{period} 브리핑")
+
         except Exception as exc:
             briefing.status = "failed"
             briefing.retry_count += 1
             briefing.error_message = str(exc)[:500]
             logger.error("Briefing failed: id=%s, error=%s", briefing_id, exc, exc_info=True)
             raise
+
+
+async def _send_briefing_push_notifications(briefing_title: str) -> None:
+    """알림을 허용한 사용자들에게 브리핑 완료 FCM 푸시를 발송합니다."""
+    try:
+        settings = _get_settings()
+        if not settings.FCM_SERVER_KEY:
+            logger.debug("FCM_SERVER_KEY 미설정 — 푸시 알림 건너뜀.")
+            return
+
+        fcm = FCMService(settings.FCM_SERVER_KEY)
+        async with get_db_context() as db:
+            stmt = (
+                select(User.fcm_token)
+                .where(
+                    User.is_active.is_(True),
+                    User.notification_enabled.is_(True),
+                    User.fcm_token.isnot(None),
+                )
+            )
+            tokens = (await db.execute(stmt)).scalars().all()
+
+        if not tokens:
+            logger.debug("FCM 토큰 보유 사용자 없음 — 푸시 알림 건너뜀.")
+            return
+
+        result = await fcm.send_to_tokens(
+            list(tokens),
+            title="브리핑 준비됨",
+            body=f"{briefing_title} - 지금 들어보세요",
+            data={"type": "briefing_ready"},
+        )
+        logger.info(
+            "FCM 푸시 발송 완료: success=%d, failure=%d",
+            result["success"],
+            result["failure"],
+        )
+    except Exception as exc:
+        logger.error("FCM 푸시 발송 오류: %s", exc)
 
 
 async def _check_expired_subscriptions() -> None:

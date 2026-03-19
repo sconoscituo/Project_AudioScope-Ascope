@@ -12,6 +12,7 @@ import 'features/article/article_detail_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/briefing/briefing_screen.dart';
 import 'features/categories/category_screen.dart';
+import 'features/categories/category_settings_screen.dart';
 import 'features/favorites/favorites_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -138,10 +139,16 @@ final _router = GoRouter(
       ),
     ),
 
-    // 카테고리 설정 (설정에서)
+    // 카테고리 설정 (설정에서) — 기존 칩 선택 UI
     GoRoute(
       path: '/categories/edit',
       builder: (context, state) => const CategoryScreen(),
+    ),
+
+    // 카테고리 설정 (체크박스 리스트 UI)
+    GoRoute(
+      path: '/categories/settings',
+      builder: (context, state) => const CategorySettingsScreen(),
     ),
 
     // 구독

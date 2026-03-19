@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_BURST: int = 10
 
+    # ── FCM (Firebase Cloud Messaging) ──
+    FCM_SERVER_KEY: str = ""  # Firebase 프로젝트 설정 → 클라우드 메시징 → 서버 키
+
     # ── Slack alerting ──
     SLACK_WEBHOOK_URL: str = ""
 

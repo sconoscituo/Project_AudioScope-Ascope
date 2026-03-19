@@ -235,6 +235,27 @@ async def update_preferences(
     })
 
 
+class FcmTokenRequest(BaseModel):
+    fcm_token: str = Field(..., min_length=1, max_length=512)
+
+
+@router.put("/me/fcm-token")
+async def update_fcm_token(
+    body: FcmTokenRequest,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """FCM 디바이스 토큰을 등록/갱신합니다."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    user.fcm_token = body.fcm_token
+    await db.flush()
+    logger.info("FCM token updated: user=%s", user_id)
+    return success_response({"message": "FCM 토큰이 등록되었습니다."})
+
+
 @router.delete("/me")
 async def delete_me(
     user_id: str = Depends(get_current_user),

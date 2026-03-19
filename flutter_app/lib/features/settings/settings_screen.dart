@@ -62,6 +62,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: () => context.push('/categories/edit'),
           ),
           _SettingsTile(
+            icon: Icons.checklist_rounded,
+            title: '관심 카테고리 설정',
+            subtitle: '카테고리별 체크박스로 세부 설정',
+            onTap: () => context.push('/categories/settings'),
+          ),
+          _SettingsTile(
             icon: Icons.record_voice_over_rounded,
             title: '음성 선택',
             subtitle: '브리핑 나레이터 목소리',
