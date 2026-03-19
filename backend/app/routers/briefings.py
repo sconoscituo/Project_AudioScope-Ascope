@@ -6,8 +6,10 @@
 
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+
+KST = timezone(timedelta(hours=9))
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -42,7 +44,7 @@ async def get_today_briefings(
     user_id: str = Depends(get_current_user),
 ):
     """오늘의 브리핑 목록을 반환합니다. 프리미엄 여부에 따라 잠금 표시."""
-    today = date.today()
+    today = datetime.now(KST).date()
     stmt = (
         select(Briefing)
         .where(Briefing.scheduled_date == today)

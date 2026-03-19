@@ -43,6 +43,8 @@ class User(Base):
     provider: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    referral_code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True, index=True)
     fcm_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     preferred_voice_id: Mapped[str] = mapped_column(String(64), default="ko-KR-female-1", nullable=False)
     profile_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)

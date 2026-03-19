@@ -5,12 +5,16 @@
 
 import asyncio
 import logging
-from datetime import date
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# 백그라운드 태스크 참조 보관 (GC 방지)
+_background_tasks: set[asyncio.Task] = set()
+KST = timezone(timedelta(hours=9))
 
 from app.config import get_settings
 from app.database import get_db
@@ -50,7 +54,9 @@ async def trigger_briefing_generation(
     if period not in VALID_PERIODS:
         raise HTTPException(status_code=400, detail=f"Invalid period: {period}")
 
-    asyncio.create_task(generate_briefing(period))
+    task = asyncio.create_task(generate_briefing(period))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return success_response({"message": f"Briefing generation started: {period}"})
 
 
@@ -60,7 +66,7 @@ async def get_billing_status(
     _: str = Depends(admin_required),
 ):
     """빌링 현황을 반환합니다."""
-    today = date.today()
+    today = datetime.now(KST).date()
     month_start = date(today.year, today.month, 1)
 
     gemini_stmt = select(
@@ -136,7 +142,7 @@ async def detailed_health(
     except Exception as exc:
         logger.error("DB health check failed: %s", exc)
 
-    today = date.today()
+    today = datetime.now(KST).date()
     stmt = select(Briefing).where(Briefing.scheduled_date == today)
     today_briefings = (await db.execute(stmt)).scalars().all()
     briefing_status = {b.period: b.status for b in today_briefings}

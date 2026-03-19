@@ -19,15 +19,21 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+import threading
+
 _firebase_app: firebase_admin.App | None = None
+_firebase_lock = threading.Lock()
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def init_firebase() -> None:
-    """Firebase Admin SDK를 초기화합니다."""
+    """Firebase Admin SDK를 초기화합니다 (thread-safe)."""
     global _firebase_app
     if _firebase_app is not None:
         return
+    with _firebase_lock:
+        if _firebase_app is not None:
+            return
     try:
         # 1순위: 환경변수로 전달된 base64 인코딩 JSON
         if settings.FIREBASE_CREDENTIALS_JSON:
@@ -145,6 +151,27 @@ async def get_optional_user(
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
+        if payload.get("type") != "access":
+            return None
         return payload.get("sub")
     except JWTError:
         return None
+
+
+async def refresh_access_token(refresh_token_str: str) -> str:
+    """리프레시 토큰으로 새 액세스 토큰을 발급합니다."""
+    try:
+        payload = jwt.decode(
+            refresh_token_str,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type.")
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token.")
+        return create_jwt_token(user_id)
+    except JWTError as exc:
+        logger.warning("Refresh token validation failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid refresh token.")

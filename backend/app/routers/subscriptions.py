@@ -5,7 +5,9 @@
 """
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -95,13 +97,18 @@ async def claim_ad_reward(
     if sub.is_active_premium:
         return error_response("프리미엄 사용자는 광고 보상이 필요없습니다.", 400)
 
-    redis = await get_redis()
-    key = f"ad_reward:{user_id}:{date.today().isoformat()}"
+    try:
+        redis = await get_redis()
+        await redis.ping()
+    except Exception:
+        return error_response("보상 서비스를 일시적으로 사용할 수 없습니다.", 503)
+
+    today_kst = datetime.now(KST).date().isoformat()
+    key = f"ad_reward:{user_id}:{today_kst}"
     already_claimed = await redis.get(key)
     if already_claimed:
         return error_response("오늘은 이미 광고 보상을 받았습니다.", 400)
 
-    # 보상 기록 (자정에 자동 만료)
     await redis.setex(key, 86400, "1")
     logger.info("Ad reward claimed: user=%s", user_id)
 
@@ -136,7 +143,7 @@ async def check_access(
 
 async def _get_today_listen_count(db: AsyncSession, user_id: str) -> int:
     """오늘 사용자의 청취 횟수를 반환합니다."""
-    today = date.today()
+    today = datetime.now(KST).date()
     stmt = select(func.count()).select_from(ListenHistory).where(
         ListenHistory.user_id == user_id,
         func.date(ListenHistory.listened_at) == today,
@@ -149,7 +156,8 @@ async def _get_ad_bonus_count(user_id: str) -> int:
     """오늘 광고 보상 횟수를 반환합니다."""
     try:
         redis = await get_redis()
-        key = f"ad_reward:{user_id}:{date.today().isoformat()}"
+        today_kst = datetime.now(KST).date().isoformat()
+        key = f"ad_reward:{user_id}:{today_kst}"
         result = await redis.get(key)
         return int(result) if result else 0
     except Exception:

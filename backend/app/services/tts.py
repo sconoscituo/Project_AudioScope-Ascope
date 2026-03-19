@@ -4,9 +4,9 @@ Supertone Play TTS 서비스 모듈.
 긴 텍스트는 청크 분할 후 병합합니다.
 """
 
-import io
 import logging
-from datetime import date
+import threading
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,20 +17,25 @@ from app.models.billing import BillingUsage
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+KST = timezone(timedelta(hours=9))
 SUPERTONE_API_URL = "https://api.supertone.ai/v1/text-to-speech"
 SUPERTONE_COST_PER_REQUEST = 0.05
 MAX_TTS_CHARS = 3000
 
 
 class SupertoneTTS:
-    """Supertone Play API를 사용하는 TTS 서비스."""
+    """Supertone Play API를 사용하는 TTS 서비스 (thread-safe singleton)."""
 
     _instance: "SupertoneTTS | None" = None
+    _lock = threading.Lock()
 
     def __new__(cls) -> "SupertoneTTS":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+            with cls._lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._initialized = False
+                    cls._instance = instance
         return cls._instance
 
     def __init__(self) -> None:
@@ -145,7 +150,7 @@ class SupertoneTTS:
     async def _record_billing(db: AsyncSession, amount_usd: float) -> None:
         record = BillingUsage(
             service="supertone",
-            usage_date=date.today(),
+            usage_date=datetime.now(KST).date(),
             amount_usd=amount_usd,
             request_count=1,
         )

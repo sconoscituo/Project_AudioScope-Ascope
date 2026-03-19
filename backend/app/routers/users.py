@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,7 +22,7 @@ from app.schemas.user import (
     VoiceUpdateRequest,
 )
 from app.services.billing_monitor import send_inquiry_alert
-from app.utils.auth import create_jwt_token, get_current_user, verify_firebase_token
+from app.utils.auth import create_jwt_token, create_refresh_token, get_current_user, refresh_access_token, verify_firebase_token
 from app.utils.response import success_response, error_response
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,11 @@ async def authenticate(
         db.add(user)
         await db.flush()
 
+        # 추천 코드 생성
+        import hashlib
+        user.referral_code = hashlib.sha256(str(user.id).encode()).hexdigest()[:8].upper()
+        await db.flush()
+
         # 기본 카테고리 설정 (연예 제외)
         default_cats = ["politics", "economy", "society", "world", "tech", "science"]
         for i, cat in enumerate(default_cats):
@@ -89,14 +94,16 @@ async def authenticate(
     await db.flush()
     await db.refresh(user)
 
-    token = create_jwt_token(str(user.id))
+    access_token = create_jwt_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id))
     categories = [p.category for p in user.category_preferences if p.is_enabled]
 
     user_data = UserResponse.model_validate(user).model_dump()
     user_data["categories"] = categories
 
     return success_response({
-        "access_token": token,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "is_new_user": is_new,
         "user": user_data,
@@ -230,7 +237,7 @@ async def update_voice(
     valid_ids = [v["id"] for v in SUPERTONE_VOICES]
     if body.voice_id not in valid_ids:
         raise HTTPException(status_code=400, detail="Invalid voice_id")
-    user = (await db.execute(select(User).where(User.firebase_uid == user_id))).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.preferred_voice_id = body.voice_id
@@ -238,8 +245,22 @@ async def update_voice(
 
 
 class InquiryRequest(BaseModel):
-    subject: str
-    message: str
+    subject: str = Field(..., max_length=200)
+    message: str = Field(..., max_length=2000)
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/auth/refresh")
+async def refresh_token(body: RefreshTokenRequest):
+    """리프레시 토큰으로 새 액세스 토큰을 발급합니다."""
+    new_access = await refresh_access_token(body.refresh_token)
+    return success_response({
+        "access_token": new_access,
+        "token_type": "bearer",
+    })
 
 
 @router.post("/me/inquiry")

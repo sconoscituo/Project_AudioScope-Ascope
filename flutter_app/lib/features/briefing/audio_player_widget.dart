@@ -62,7 +62,16 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   @override
   void dispose() {
-    _recordListenProgress();
+    // dispose()는 동기이므로 async 호출의 Future를 무시하지 않고
+    // unawaited로 명시적으로 처리. 위젯 트리와 무관한 네트워크 호출.
+    final position = _player.position.inSeconds;
+    if (widget.briefingId.isNotEmpty && position > 0) {
+      ApiClient().post('/api/v1/briefings/listen', data: {
+        'briefing_id': widget.briefingId,
+        'listened_seconds': position,
+        'completed': false,
+      }).catchError((_) {});
+    }
     _player.dispose();
     super.dispose();
   }

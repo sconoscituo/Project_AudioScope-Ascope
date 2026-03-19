@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     MAX_ARTICLES_PER_BRIEFING: int = 12
     BRIEFING_SCRIPT_MIN_CHARS: int = 500
     BRIEFING_SCRIPT_MAX_CHARS: int = 1200
+    DEFAULT_VOICE_ID: str = "ko-KR-female-1"
 
     # ── News Categories (기본값) ──
     DEFAULT_CATEGORIES: str = "politics,economy,society,world,tech,science"

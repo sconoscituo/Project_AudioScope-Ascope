@@ -103,10 +103,20 @@ async def upgrade_subscription(
 
 
 async def cancel_subscription(db: AsyncSession, user_id: str) -> Subscription:
-    """구독을 취소합니다 (만료일까지 유지)."""
+    """구독을 취소합니다 (만료일까지 유지, 만료 시 is_premium 해제)."""
     sub = await get_or_create_subscription(db, user_id)
     sub.status = "cancelled"
     sub.cancelled_at = datetime.now(timezone.utc)
+
+    # 만료일이 이미 지났으면 즉시 프리미엄 해제
+    if sub.expires_at and sub.expires_at <= datetime.now(timezone.utc):
+        sub.plan = "free"
+        user = (await db.execute(
+            select(User).where(User.id == user_id)
+        )).scalar_one_or_none()
+        if user:
+            user.is_premium = False
+
     await db.flush()
     logger.info("Subscription cancelled: user=%s", user_id)
     return sub

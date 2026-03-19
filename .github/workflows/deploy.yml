@@ -18,31 +18,42 @@ jobs:
       - name: Inject env vars into Render
         env:
           FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPERTONE_API_KEY: ${{ secrets.SUPERTONE_API_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
         run: |
-          python3 - <<'EOF'
+          python3 -c "
           import json, os
 
           env_vars = [
-            {"key": "ENVIRONMENT", "value": "production"},
-            {"key": "DATABASE_URL", "value": "${{ secrets.DATABASE_URL }}"},
-            {"key": "JWT_SECRET_KEY", "value": "${{ secrets.JWT_SECRET_KEY }}"},
-            {"key": "GEMINI_API_KEY", "value": "${{ secrets.GEMINI_API_KEY }}"},
-            {"key": "SUPERTONE_API_KEY", "value": "${{ secrets.SUPERTONE_API_KEY }}"},
-            {"key": "NAVER_CLIENT_ID", "value": "${{ secrets.NAVER_CLIENT_ID }}"},
-            {"key": "NAVER_CLIENT_SECRET", "value": "${{ secrets.NAVER_CLIENT_SECRET }}"},
-            {"key": "SUPABASE_URL", "value": "${{ secrets.SUPABASE_URL }}"},
-            {"key": "SUPABASE_SERVICE_KEY", "value": "${{ secrets.SUPABASE_SERVICE_KEY }}"},
-            {"key": "SUPABASE_STORAGE_BUCKET", "value": "${{ secrets.SUPABASE_STORAGE_BUCKET }}"},
-            {"key": "FIREBASE_CREDENTIALS_JSON", "value": os.environ["FIREBASE_CREDENTIALS_JSON"]},
+            {'key': 'ENVIRONMENT', 'value': 'production'},
+            {'key': 'DATABASE_URL', 'value': os.environ['DATABASE_URL']},
+            {'key': 'JWT_SECRET_KEY', 'value': os.environ['JWT_SECRET_KEY']},
+            {'key': 'GEMINI_API_KEY', 'value': os.environ['GEMINI_API_KEY']},
+            {'key': 'SUPERTONE_API_KEY', 'value': os.environ['SUPERTONE_API_KEY']},
+            {'key': 'NAVER_CLIENT_ID', 'value': os.environ['NAVER_CLIENT_ID']},
+            {'key': 'NAVER_CLIENT_SECRET', 'value': os.environ['NAVER_CLIENT_SECRET']},
+            {'key': 'SUPABASE_URL', 'value': os.environ['SUPABASE_URL']},
+            {'key': 'SUPABASE_SERVICE_KEY', 'value': os.environ['SUPABASE_SERVICE_KEY']},
+            {'key': 'SUPABASE_STORAGE_BUCKET', 'value': os.environ['SUPABASE_STORAGE_BUCKET']},
+            {'key': 'FIREBASE_CREDENTIALS_JSON', 'value': os.environ['FIREBASE_CREDENTIALS_JSON']},
           ]
-          with open("render_env.json", "w") as f:
+          with open('render_env.json', 'w') as f:
             json.dump(env_vars, f)
-          EOF
+          "
 
           curl -s -X PUT "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/env-vars" \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
             --data-binary @render_env.json
+
+          rm -f render_env.json
 
       - name: Trigger Render deploy
         run: |

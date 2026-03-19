@@ -51,16 +51,51 @@ class ApiClient {
     ErrorInterceptorHandler handler,
   ) async {
     if (error.response?.statusCode == 401) {
+      // 리프레시 토큰으로 액세스 토큰 갱신 시도
+      final refreshed = await _tryRefreshToken();
+      if (refreshed && error.requestOptions.extra['_retried'] != true) {
+        error.requestOptions.extra['_retried'] = true;
+        try {
+          final token = await _storage.read(key: AppConstants.tokenKey);
+          error.requestOptions.headers['Authorization'] = 'Bearer $token';
+          final response = await _dio.fetch(error.requestOptions);
+          return handler.resolve(response);
+        } catch (_) {}
+      }
       await clearToken();
       onUnauthorized?.call();
     }
     handler.next(error);
   }
 
+  Future<bool> _tryRefreshToken() async {
+    final refreshToken = await _storage.read(key: AppConstants.refreshTokenKey);
+    if (refreshToken == null || refreshToken.isEmpty) return false;
+    try {
+      final response = await _dio.post(
+        '/api/v1/users/auth/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+      final data = response.data;
+      if (data is Map<String, dynamic> && data['success'] == true) {
+        final newToken = data['data']?['access_token'] as String?;
+        if (newToken != null) {
+          await saveToken(newToken);
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
   // ── Token Management ──
 
   Future<void> saveToken(String token) async {
     await _storage.write(key: AppConstants.tokenKey, value: token);
+  }
+
+  Future<void> saveRefreshToken(String token) async {
+    await _storage.write(key: AppConstants.refreshTokenKey, value: token);
   }
 
   Future<void> clearToken() async {

@@ -92,9 +92,13 @@ async def not_found_handler(request: Request, exc: Exception) -> ORJSONResponse:
 @app.exception_handler(422)
 async def validation_handler(request: Request, exc: Exception) -> ORJSONResponse:
     logger.warning("Validation error: %s - %s", request.url.path, exc)
+    detail = "입력 데이터가 올바르지 않습니다."
+    if hasattr(exc, "errors") and callable(exc.errors):
+        fields = [e.get("loc", ["unknown"])[-1] for e in exc.errors()]
+        detail = f"입력 오류: {', '.join(str(f) for f in fields)}"
     return ORJSONResponse(
         status_code=422,
-        content={"success": False, "data": None, "error": str(exc)},
+        content={"success": False, "data": None, "error": detail},
     )
 
 

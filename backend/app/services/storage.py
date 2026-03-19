@@ -14,15 +14,22 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+import threading
+
+
 class SupabaseStorage:
-    """Supabase Storage 클라이언트."""
+    """Supabase Storage 클라이언트 (thread-safe singleton)."""
 
     _instance: "SupabaseStorage | None" = None
+    _lock = threading.Lock()
 
     def __new__(cls) -> "SupabaseStorage":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+            with cls._lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._initialized = False
+                    cls._instance = instance
         return cls._instance
 
     def __init__(self) -> None:

@@ -6,10 +6,13 @@ Gemini AI 뉴스 요약 서비스 모듈.
 
 import json
 import logging
-from datetime import date
+import threading
+from datetime import datetime, timedelta, timezone
 
 import google.generativeai as genai
 from sqlalchemy.ext.asyncio import AsyncSession
+
+KST = timezone(timedelta(hours=9))
 
 from app.config import get_settings
 from app.models.billing import BillingUsage
@@ -54,15 +57,22 @@ BRIEFING_SYSTEM_PROMPT = """당신은 AudioScope의 AI 뉴스 앵커 '스코프'
 """
 
 
+import threading
+
+
 class GeminiSummarizer:
-    """Gemini API를 사용한 뉴스 요약 서비스."""
+    """Gemini API를 사용한 뉴스 요약 서비스 (thread-safe singleton)."""
 
     _instance: "GeminiSummarizer | None" = None
+    _lock = threading.Lock()
 
     def __new__(cls) -> "GeminiSummarizer":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+            with cls._lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._initialized = False
+                    cls._instance = instance
         return cls._instance
 
     def __init__(self) -> None:
@@ -169,7 +179,7 @@ class GeminiSummarizer:
         )
         record = BillingUsage(
             service="gemini",
-            usage_date=date.today(),
+            usage_date=datetime.now(KST).date(),
             amount_usd=cost_usd,
             request_count=1,
             metadata_json=json.dumps({"input_tokens": input_tokens, "output_tokens": output_tokens}),

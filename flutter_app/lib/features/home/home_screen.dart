@@ -202,13 +202,16 @@ class BriefingTab extends ConsumerWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.premiumGradientStart, AppColors.premiumGradientEnd],
+          colors: [
+            AppColors.accent.withOpacity(0.08),
+            AppColors.surfaceCard,
+          ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+        border: Border.all(color: AppColors.accent.withOpacity(0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,22 +221,33 @@ class BriefingTab extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withOpacity(0.2),
+                  color: AppColors.accent.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.play_circle_filled_rounded,
-                        size: 16, color: AppColors.accent),
-                    SizedBox(width: 4),
-                    Text(
-                      'NOW',
+                    Container(
+                      width: 6, height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.accent,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.accent.withOpacity(0.5),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'LIVE',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: AppColors.accent,
-                        letterSpacing: 1,
+                        letterSpacing: 1.5,
                       ),
                     ),
                   ],
@@ -261,7 +275,7 @@ class BriefingTab extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
+          const Text(
             'AI 아나운서가 오늘의 핵심 뉴스를 전해드립니다',
             style: TextStyle(
               fontSize: 13,

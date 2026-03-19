@@ -85,21 +85,30 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-# ── Redis 연결 ──
+# ── Redis 연결 (thread-safe) ──
+import asyncio
+
 _redis_pool: aioredis.Redis | None = None
+_redis_lock = asyncio.Lock()
 
 
 async def get_redis() -> aioredis.Redis:
-    """Redis 싱글톤 연결을 반환합니다."""
+    """Redis 싱글톤 연결을 반환합니다 (async-safe)."""
     global _redis_pool
-    if _redis_pool is None:
+    if _redis_pool is not None:
+        return _redis_pool
+    async with _redis_lock:
+        if _redis_pool is not None:
+            return _redis_pool
+        if not settings.REDIS_URL:
+            raise RuntimeError("REDIS_URL is not configured.")
         _redis_pool = aioredis.from_url(
             settings.REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
             max_connections=50,
         )
-    return _redis_pool
+        return _redis_pool
 
 
 async def close_redis() -> None:

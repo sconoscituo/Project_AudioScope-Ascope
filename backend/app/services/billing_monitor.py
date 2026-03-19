@@ -4,11 +4,13 @@
 """
 
 import logging
-from datetime import date
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+KST = timezone(timedelta(hours=9))
 
 from app.config import get_settings
 from app.models.billing import BillingUsage
@@ -19,7 +21,7 @@ settings = get_settings()
 
 async def check_daily_gemini_usage(db: AsyncSession) -> None:
     """Gemini 일일 사용량 한도 초과 여부를 확인합니다."""
-    today = date.today()
+    today = datetime.now(KST).date()
     stmt = select(func.sum(BillingUsage.amount_usd)).where(
         BillingUsage.service == "gemini",
         BillingUsage.usage_date == today,
@@ -39,7 +41,7 @@ async def check_daily_gemini_usage(db: AsyncSession) -> None:
 
 async def check_monthly_supertone_usage(db: AsyncSession) -> None:
     """Supertone 월간 사용량 한도 초과 여부를 확인합니다."""
-    today = date.today()
+    today = datetime.now(KST).date()
     month_start = date(today.year, today.month, 1)
 
     stmt = select(func.sum(BillingUsage.amount_usd)).where(

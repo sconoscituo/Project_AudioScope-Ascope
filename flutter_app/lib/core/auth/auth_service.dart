@@ -66,8 +66,12 @@ class AuthService {
     if (data == null) return null;
 
     final accessToken = data['access_token'] as String?;
+    final refreshToken = data['refresh_token'] as String?;
     if (accessToken != null) {
       await _apiClient.saveToken(accessToken);
+    }
+    if (refreshToken != null) {
+      await _apiClient.saveRefreshToken(refreshToken);
     }
 
     return data;

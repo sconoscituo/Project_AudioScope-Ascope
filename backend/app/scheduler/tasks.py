@@ -82,7 +82,7 @@ async def generate_briefing(period: str) -> None:
     뉴스 수집 → AI 요약 → TTS 변환 → R2 업로드 → DB 저장
     ACID 보장: get_db_context로 트랜잭션 관리.
     """
-    today = date.today()
+    today = datetime.now(KST).date()
     logger.info("=== Briefing pipeline start: period=%s, date=%s ===", period, today)
 
     async with get_db_context() as db:
@@ -116,13 +116,9 @@ async def generate_briefing(period: str) -> None:
             summarizer = GeminiSummarizer()
             script, metadata = await summarizer.summarize_articles(articles, period, db)
 
-            # 3. TTS 변환 (첫 번째 활성 사용자의 preferred_voice_id 사용)
-            from app.models.user import User as _User
-            _user_result = await db.execute(
-                select(_User).where(_User.is_active.is_(True)).limit(1)
-            )
-            _user = _user_result.scalar_one_or_none()
-            _voice_id = _user.preferred_voice_id if _user else "ko-KR-female-1"
+            # 3. TTS 변환 (설정의 기본 음성 사용)
+            from app.config import get_settings as _get_settings
+            _voice_id = _get_settings().DEFAULT_VOICE_ID
             tts = SupertoneTTS()
             audio_bytes, duration = await tts.text_to_speech(script, db, voice_id=_voice_id)
 
@@ -194,7 +190,7 @@ async def _update_weekly_trends() -> None:
     """오늘 브리핑에 포함된 기사들의 키워드 트렌드를 갱신합니다."""
     try:
         async with get_db_context() as db:
-            today = date.today()
+            today = datetime.now(KST).date()
             stmt = (
                 select(Briefing)
                 .where(Briefing.scheduled_date == today, Briefing.status == "completed")

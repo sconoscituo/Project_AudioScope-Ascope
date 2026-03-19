@@ -51,6 +51,7 @@ flutter_app/**/*.g.dart
 flutter_app/**/*.freezed.dart
 flutter_app/pubspec.lock
 flutter_app/google-services.json
+flutter_app/**/google-services.json
 flutter_app/ios/GoogleService-Info.plist
 
 # ===== IDE =====
