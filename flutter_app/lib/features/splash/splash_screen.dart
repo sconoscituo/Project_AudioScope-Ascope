@@ -1,13 +1,12 @@
 import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_service.dart';
 import '../../core/theme/app_theme.dart';
 
-/// Splash: 풀스크린 Radar Sweep 애니메이션.
-/// 레이더가 360도 스캔 → "Signal Found" → 로고 등장 → 라우팅.
+/// Splash: 오디오 파형 애니메이션으로 로고 등장.
+/// 파형이 좌→우로 펼쳐지며 로고 등장 → 1.5초 후 홈으로 전환.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -17,61 +16,72 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  late final AnimationController _sweepController;
-  late final AnimationController _revealController;
+  late final AnimationController _waveController;
+  late final AnimationController _logoController;
   late final AnimationController _pulseController;
-  late final Animation<double> _sweepAngle;
-  late final Animation<double> _revealOpacity;
-  late final Animation<double> _revealScale;
-  late final Animation<double> _gridOpacity;
+  late final AnimationController _textController;
+
+  late final Animation<double> _logoOpacity;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _textOpacity;
+  late final Animation<Offset> _textSlide;
 
   @override
   void initState() {
     super.initState();
 
-    // 레이더 스윕 회전 (1.6초에 1바퀴)
-    _sweepController = AnimationController(
+    // 파형 루프 애니메이션
+    _waveController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    );
-    _sweepAngle = Tween<double>(begin: 0, end: 2 * pi).animate(
-      CurvedAnimation(parent: _sweepController, curve: Curves.easeInOut),
+      duration: const Duration(milliseconds: 1000),
     );
 
     // 로고 등장
-    _revealController = AnimationController(
+    _logoController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 550),
     );
-    _revealOpacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _revealController, curve: Curves.easeOut),
-    );
-    _revealScale = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(parent: _revealController, curve: Curves.easeOutBack),
-    );
-    _gridOpacity = Tween<double>(begin: 0, end: 0.3).animate(
-      CurvedAnimation(parent: _sweepController, curve: Curves.easeIn),
+    _logoOpacity = CurvedAnimation(parent: _logoController, curve: Curves.easeOut);
+    _logoScale = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack),
     );
 
-    // 펄스
+    // 미세 펄스
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     );
+
+    // 텍스트 슬라이드업
+    _textController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _textOpacity = CurvedAnimation(parent: _textController, curve: Curves.easeOut);
+    _textSlide = Tween<Offset>(
+      begin: const Offset(0, 0.4),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _textController, curve: Curves.easeOutCubic));
 
     _startSequence();
   }
 
   Future<void> _startSequence() async {
+    // 파형 먼저 시작
+    await Future.delayed(const Duration(milliseconds: 150));
+    _waveController.repeat();
+
+    // 로고 등장
+    await Future.delayed(const Duration(milliseconds: 300));
+    _logoController.forward();
+
+    // 텍스트 등장
     await Future.delayed(const Duration(milliseconds: 200));
-    // 레이더 스윕
-    _sweepController.forward();
-    await Future.delayed(const Duration(milliseconds: 1700));
-    // 로고 등장 + 펄스
-    _revealController.forward();
+    _textController.forward();
     _pulseController.repeat(reverse: true);
-    await Future.delayed(const Duration(milliseconds: 900));
-    // 라우팅
+
+    // 1.5초 후 라우팅
+    await Future.delayed(const Duration(milliseconds: 1500));
     if (!mounted) return;
     final isAuth = await AuthService.instance.isAuthenticated();
     if (!mounted) return;
@@ -80,146 +90,215 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _sweepController.dispose();
-    _revealController.dispose();
+    _waveController.dispose();
+    _logoController.dispose();
     _pulseController.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final maxRadius = size.longestSide * 0.7;
 
     return Scaffold(
-      backgroundColor: AppColors.primary,
-      body: Stack(
-        children: [
-          // 배경 격자 라인 (스캔 후 나타남)
-          AnimatedBuilder(
-            animation: _sweepController,
-            builder: (context, _) {
-              return Opacity(
-                opacity: _gridOpacity.value,
-                child: CustomPaint(
-                  size: size,
-                  painter: _GridPainter(),
-                ),
-              );
-            },
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF050505),
+              Color(0xFF0D1A16),
+              Color(0xFF050505),
+            ],
+            stops: [0.0, 0.5, 1.0],
           ),
-
-          // 동심원 레이더 링
-          Center(
-            child: AnimatedBuilder(
-              animation: _sweepController,
-              builder: (context, _) {
-                return CustomPaint(
-                  size: Size(maxRadius * 2, maxRadius * 2),
-                  painter: _RadarPainter(
-                    sweepAngle: _sweepAngle.value,
-                    progress: _sweepController.value,
-                    maxRadius: maxRadius,
-                  ),
-                );
-              },
+        ),
+        child: Stack(
+          children: [
+            // 하단 파형 배경 (넓게)
+            Positioned(
+              bottom: size.height * 0.12,
+              left: 0,
+              right: 0,
+              child: AnimatedBuilder(
+                animation: _waveController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    size: Size(size.width, 90),
+                    painter: _SplashWavePainter(
+                      progress: _waveController.value,
+                      opacity: _logoOpacity.value * 0.35,
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
 
-          // 중앙 로고 + 텍스트
-          Center(
-            child: AnimatedBuilder(
-              animation: Listenable.merge([_revealController, _pulseController]),
-              builder: (context, _) {
-                final pulse = 1.0 + (_pulseController.value * 0.03);
-                return Opacity(
-                  opacity: _revealOpacity.value,
-                  child: Transform.scale(
-                    scale: _revealScale.value * pulse,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 로고 — 스코프 십자선 + 헤드셋
-                        _buildScopeLogo(),
-                        const SizedBox(height: 28),
-                        const Text(
-                          'AudioScope',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                            letterSpacing: 3,
-                          ),
+            // 상단 파형 배경 (반전)
+            Positioned(
+              top: size.height * 0.12,
+              left: 0,
+              right: 0,
+              child: AnimatedBuilder(
+                animation: _waveController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    size: Size(size.width, 90),
+                    painter: _SplashWavePainter(
+                      progress: _waveController.value,
+                      opacity: _logoOpacity.value * 0.2,
+                      phaseOffset: pi,
+                      flipped: true,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // 중앙: 로고 + 텍스트
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 로고 아이콘
+                  AnimatedBuilder(
+                    animation: Listenable.merge([_logoController, _pulseController]),
+                    builder: (context, _) {
+                      final pulse = 1.0 + (_pulseController.value * 0.025);
+                      return Opacity(
+                        opacity: _logoOpacity.value,
+                        child: Transform.scale(
+                          scale: _logoScale.value * pulse,
+                          child: _buildLogo(),
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'SIGNAL ACQUIRED',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.accent.withOpacity(0.8),
-                            letterSpacing: 4,
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // 텍스트
+                  FadeTransition(
+                    opacity: _textOpacity,
+                    child: SlideTransition(
+                      position: _textSlide,
+                      child: Column(
+                        children: [
+                          const Text(
+                            'AudioScope',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                              letterSpacing: 2.5,
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 10),
+                          Text(
+                            'AI 뉴스 오디오 브리핑',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.accent.withOpacity(0.75),
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-          ),
-        ],
+
+            // 하단 로딩 인디케이터 (점 3개)
+            Positioned(
+              bottom: 60,
+              left: 0,
+              right: 0,
+              child: AnimatedBuilder(
+                animation: _pulseController,
+                builder: (context, _) {
+                  return Opacity(
+                    opacity: _logoOpacity.value,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(3, (i) {
+                        final phase = (i / 3) * pi;
+                        final scale = 0.6 + 0.4 * sin(_pulseController.value * pi + phase).abs();
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Transform.scale(
+                            scale: scale,
+                            child: Container(
+                              width: 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.accent.withOpacity(0.5 + 0.5 * scale),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildScopeLogo() {
+  Widget _buildLogo() {
     return SizedBox(
-      width: 100,
-      height: 100,
+      width: 96,
+      height: 96,
       child: Stack(
         alignment: Alignment.center,
         children: [
           // 외부 글로우 링
           Container(
-            width: 100,
-            height: 100,
+            width: 96,
+            height: 96,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.accent.withOpacity(0.4), width: 2),
+              border: Border.all(
+                color: AppColors.accent.withOpacity(0.3),
+                width: 1.5,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.accent.withOpacity(0.2),
-                  blurRadius: 30,
-                  spreadRadius: 5,
+                  color: AppColors.accent.withOpacity(0.18),
+                  blurRadius: 28,
+                  spreadRadius: 4,
                 ),
               ],
             ),
           ),
-          // 내부 링
+          // 내부 원형 배경
           Container(
-            width: 70,
-            height: 70,
+            width: 68,
+            height: 68,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.accent.withOpacity(0.25), width: 1),
+              color: AppColors.accent.withOpacity(0.07),
+              border: Border.all(
+                color: AppColors.accent.withOpacity(0.18),
+                width: 1,
+              ),
             ),
           ),
-          // 십자선
-          Container(
-            width: 100,
-            height: 1,
-            color: AppColors.accent.withOpacity(0.3),
-          ),
-          Container(
-            width: 1,
-            height: 100,
-            color: AppColors.accent.withOpacity(0.3),
-          ),
-          // 헤드셋 아이콘
+          // 헤드폰 아이콘
           const Icon(
             Icons.headphones_rounded,
-            size: 36,
+            size: 34,
             color: AppColors.accent,
           ),
         ],
@@ -228,108 +307,52 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// 레이더 스윕 + 동심원 페인터.
-class _RadarPainter extends CustomPainter {
-  final double sweepAngle;
+/// 스플래시용 파형 페인터.
+class _SplashWavePainter extends CustomPainter {
   final double progress;
-  final double maxRadius;
+  final double opacity;
+  final double phaseOffset;
+  final bool flipped;
 
-  _RadarPainter({
-    required this.sweepAngle,
+  _SplashWavePainter({
     required this.progress,
-    required this.maxRadius,
+    required this.opacity,
+    this.phaseOffset = 0,
+    this.flipped = false,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
+    if (opacity <= 0) return;
 
-    // 동심원 (레이더 스캔이 진행될수록 나타남)
-    for (int i = 1; i <= 4; i++) {
-      final r = maxRadius * i / 4;
-      final ringOpacity = (progress * 4 - i + 1).clamp(0.0, 1.0) * 0.15;
-      canvas.drawCircle(
-        center,
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = AppColors.accent.withOpacity(ringOpacity),
+    const barCount = 36;
+    final barWidth = (size.width / barCount) * 0.5;
+    final gap = (size.width - barWidth * barCount) / (barCount + 1);
+
+    final paint = Paint()..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < barCount; i++) {
+      final x = gap + i * (barWidth + gap) + barWidth / 2;
+      final phase = (i / barCount) * 2 * pi + phaseOffset;
+      final wave = sin(progress * 2 * pi + phase);
+      final heightFraction = 0.2 + 0.6 * ((wave + 1) / 2);
+      final barHeight = size.height * heightFraction;
+
+      final top = flipped ? 0.0 : size.height - barHeight;
+
+      paint.color = AppColors.accent.withOpacity(opacity * (0.4 + 0.6 * heightFraction));
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x - barWidth / 2, top, barWidth, barHeight),
+          const Radius.circular(2),
+        ),
+        paint,
       );
-    }
-
-    // 스윕 빔 (부채꼴 그라데이션)
-    if (progress < 1.0) {
-      final sweepPaint = Paint()
-        ..shader = SweepGradient(
-          startAngle: sweepAngle - 0.5,
-          endAngle: sweepAngle,
-          colors: [
-            Colors.transparent,
-            AppColors.accent.withOpacity(0.0),
-            AppColors.accent.withOpacity(0.25),
-          ],
-          stops: const [0.0, 0.3, 1.0],
-          transform: GradientRotation(sweepAngle - 0.5),
-        ).createShader(Rect.fromCircle(center: center, radius: maxRadius));
-
-      canvas.drawCircle(center, maxRadius, sweepPaint);
-
-      // 스윕 라인
-      final lineEnd = Offset(
-        center.dx + maxRadius * cos(sweepAngle - pi / 2),
-        center.dy + maxRadius * sin(sweepAngle - pi / 2),
-      );
-      canvas.drawLine(
-        center,
-        lineEnd,
-        Paint()
-          ..color = AppColors.accent.withOpacity(0.6)
-          ..strokeWidth = 1.5,
-      );
-    }
-
-    // 스캔 도트 (스윕 팁에 밝은 점)
-    if (progress < 1.0) {
-      for (int i = 0; i < 3; i++) {
-        final dotAngle = sweepAngle - pi / 2 - (i * 0.15);
-        final dotR = maxRadius * (0.3 + (i * 0.25));
-        final dotPos = Offset(
-          center.dx + dotR * cos(dotAngle),
-          center.dy + dotR * sin(dotAngle),
-        );
-        canvas.drawCircle(
-          dotPos,
-          3 - i.toDouble(),
-          Paint()..color = AppColors.accent.withOpacity(0.8 - (i * 0.2)),
-        );
-      }
     }
   }
 
   @override
-  bool shouldRepaint(covariant _RadarPainter oldDelegate) =>
-      oldDelegate.sweepAngle != sweepAngle || oldDelegate.progress != progress;
-}
-
-/// 배경 격자 페인터.
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.accent.withOpacity(0.06)
-      ..strokeWidth = 0.5;
-
-    const spacing = 40.0;
-
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _SplashWavePainter old) =>
+      old.progress != progress || old.opacity != opacity;
 }
