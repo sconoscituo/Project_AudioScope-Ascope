@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # ── Slack alerting ──
     SLACK_WEBHOOK_URL: str = ""
 
+    # ── PortOne 결제 ──
+    PORTONE_API_KEY: str = ""
+    PORTONE_API_SECRET: str = ""
+
     # ── Freemium ──
     FREE_BRIEFING_PERIOD: str = "morning"
     PREMIUM_PRICE_KRW_MONTHLY: int = 4900
