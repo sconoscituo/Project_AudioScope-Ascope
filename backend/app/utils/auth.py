@@ -13,6 +13,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from firebase_admin import auth as firebase_auth, credentials
 from jose import JWTError, jwt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 
@@ -84,11 +86,13 @@ def verify_firebase_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Token verification failed.")
 
 
-def create_jwt_token(user_id: str) -> str:
-    """JWT 액세스 토큰을 생성합니다."""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_ACCESS_EXPIRE_MINUTES)
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """JWT 액세스 토큰을 생성합니다 (기본 만료: 15분)."""
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=settings.JWT_ACCESS_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + expires_delta
     payload = {
-        "sub": user_id,
+        **data,
         "exp": expire,
         "iat": datetime.now(timezone.utc),
         "type": "access",
@@ -96,16 +100,66 @@ def create_jwt_token(user_id: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
-    """JWT 리프레시 토큰을 생성합니다."""
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.JWT_REFRESH_EXPIRE_DAYS)
+def create_refresh_token(data: dict | str, expires_delta: timedelta | None = None) -> str:
+    """JWT 리프레시 토큰을 생성합니다 (기본 만료: 7일).
+
+    data가 str이면 user_id로 간주하여 {"sub": data} 형태로 래핑합니다.
+    """
+    if isinstance(data, str):
+        data = {"sub": data}
+    if expires_delta is None:
+        expires_delta = timedelta(days=settings.JWT_REFRESH_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + expires_delta
     payload = {
-        "sub": user_id,
+        **data,
         "exp": expire,
         "iat": datetime.now(timezone.utc),
         "type": "refresh",
     }
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+# 하위 호환성 유지 (기존 users.py 에서 create_jwt_token 사용)
+def create_jwt_token(user_id: str) -> str:
+    """JWT 액세스 토큰을 생성합니다 (하위 호환 래퍼)."""
+    return create_access_token({"sub": user_id})
+
+
+async def verify_refresh_token(token: str, db: AsyncSession) -> str:
+    """DB에서 리프레시 토큰을 검증하고 user_id를 반환합니다.
+
+    - JWT 서명 및 만료 검증
+    - DB에서 존재 여부 및 revoked 상태 확인
+    """
+    from app.models.refresh_token import RefreshToken
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type.")
+        user_id: str | None = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload.")
+    except JWTError as exc:
+        logger.warning("Refresh token JWT validation failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid refresh token.")
+
+    stmt = select(RefreshToken).where(RefreshToken.token == token)
+    result = await db.execute(stmt)
+    db_token = result.scalar_one_or_none()
+
+    if db_token is None:
+        raise HTTPException(status_code=401, detail="Refresh token not found.")
+    if db_token.revoked:
+        raise HTTPException(status_code=401, detail="Refresh token has been revoked.")
+    if db_token.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Refresh token expired.")
+
+    return user_id
 
 
 async def get_current_user(
@@ -159,7 +213,7 @@ async def get_optional_user(
 
 
 async def refresh_access_token(refresh_token_str: str) -> str:
-    """리프레시 토큰으로 새 액세스 토큰을 발급합니다."""
+    """리프레시 토큰으로 새 액세스 토큰을 발급합니다 (DB 미검증, 하위 호환)."""
     try:
         payload = jwt.decode(
             refresh_token_str,

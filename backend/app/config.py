@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS_PATH: str = "./firebase-credentials.json"
     FIREBASE_CREDENTIALS_JSON: str = ""  # base64-encoded JSON (Render 환경변수용)
 
+    # ── Google OAuth ──
+    GOOGLE_CLIENT_ID: str = ""  # Google Cloud Console OAuth 2.0 클라이언트 ID
+
     # ── AI / TTS ──
     GEMINI_API_KEY: str = ""
     SUPERTONE_API_KEY: str = ""

@@ -74,6 +74,9 @@ class User(Base):
     listen_history: Mapped[list["ListenHistory"]] = relationship(
         "ListenHistory", back_populates="user", cascade="all, delete-orphan"
     )
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email} premium={self.is_premium}>"
@@ -108,4 +111,5 @@ class UserCategoryPreference(Base):
 
 # Forward references
 from app.models.listen_history import ListenHistory  # noqa: E402
+from app.models.refresh_token import RefreshToken  # noqa: E402
 from app.models.subscription import Subscription  # noqa: E402

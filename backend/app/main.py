@@ -19,6 +19,7 @@ from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import admin, briefings, favorites, payments, recommendations, referrals, stats, subscriptions, trends, users
+from app.routers import auth as auth_router
 from app.scheduler.tasks import setup_scheduler
 from app.utils.auth import init_firebase
 from app.utils.logger import setup_logging
@@ -113,6 +114,7 @@ async def validation_handler(request: Request, exc: Exception) -> ORJSONResponse
 
 
 # ── Routers ──
+app.include_router(auth_router.router)
 app.include_router(briefings.router)
 app.include_router(users.router)
 app.include_router(subscriptions.router)
